@@ -17,6 +17,8 @@ import DynFlags
 import Haddock.Parser
 import Haddock.Types
 import RdrName
+import qualified Module
+import qualified OccName
 
 -- -----------------------------------------------------------------------------
 -- Parsing module headers
@@ -53,6 +55,9 @@ parseModuleHeader dflags pkgName str0 =
           hmi_language = Nothing, -- set in LexParseRn
           hmi_extensions = [] -- also set in LexParseRn
           }, parseParas dflags pkgName str9)
+
+instance Show Module.ModuleName where show = Module.moduleNameString
+instance Show OccName.OccName where show _ = "<some OccName>"
 
 -- | This function is how we read keys.
 --

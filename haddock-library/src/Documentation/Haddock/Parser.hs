@@ -20,6 +20,12 @@ module Documentation.Haddock.Parser ( parseString, parseParas
                                     , overIdentifier, toRegular, Identifier
                                     ) where
 
+import qualified Commonmark as C
+import qualified Commonmark.Extensions.Math as C
+import Documentation.Haddock.Parser.Markdown ()
+
+import qualified Data.Text as T
+
 import           Control.Applicative
 import           Control.Arrow (first)
 import           Control.Monad
@@ -36,6 +42,7 @@ import           Documentation.Haddock.Types
 import           Documentation.Haddock.Utf8
 import           Prelude hiding (takeWhile)
 import qualified Prelude as P
+import Data.Functor.Identity
 
 #if MIN_VERSION_base(4,9,0)
 import           Text.Read.Lex                      (isSymbolChar)
@@ -116,15 +123,22 @@ parse p = either err id . parseOnly (p <* endOfInput)
 
 -- | Main entry point to the parser. Appends the newline character
 -- to the input string.
-parseParas :: Maybe Package
+parseParas :: Show mod
+           => Maybe Package
            -> String -- ^ String to parse
            -> MetaDoc mod Identifier
 parseParas pkg input = case parseParasState input of
   (state, a) -> MetaDoc { _meta = Meta { _version = parserStateSince state
                                        , _package = pkg
                                        }
-                        , _doc = a
+                        , _doc = doc 
                         }
+  where
+    textToks = C.tokenize "haddock input" (T.pack input)
+    
+    doc = case runIdentity (C.parseCommonmarkWith (C.defaultSyntaxSpec <> C.mathSpec) textToks) of
+            Left e -> error (show e)
+            Right x -> x
 
 parseParasState :: String -> (ParserState, DocH mod Identifier)
 parseParasState =

@@ -29,6 +29,7 @@ library
     , transformers >= 0.3.0   && < 0.6
     , commonmark
     , text 
+    , parsec 
     , blaze-builder >= 0.4.1.0
 
   -- internal sub-lib

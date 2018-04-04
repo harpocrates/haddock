@@ -1,10 +1,16 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# OPTIONS_GHC -w #-}
 
 module Documentation.Haddock.Parser.Markdown where
 
 import Commonmark
 import Commonmark.Extensions.Math
 import Commonmark.Extensions.PipeTable
+import Commonmark.Types
+import Text.Parsec
+import Commonmark.Util
+import Commonmark.Syntax
+import Commonmark.Inlines
 
 import           Documentation.Haddock.Doc
 import           Documentation.Haddock.Types
@@ -49,6 +55,26 @@ instance (Show mod, Show id) => IsBlock (DocH mod id) (DocH mod id) where
 instance HasMath (DocH mod id) where
   inlineMath = DocMathInline . T.unpack
   displayMath = DocMathDisplay . T.unpack
+
+
+
+haddockSpec :: (Show id, Monad m) => SyntaxSpec m (DocH id (Char,String,Char)) (DocH id (Char,String,Char))
+haddockSpec = identSpec <> defaultSyntaxSpec <> mathSpec
+  where identSpec = SyntaxSpec
+                      { syntaxBlockSpecs = []
+                      , syntaxBracketedSpecs = []
+                      , syntaxFormattingSpecs = []
+                      , syntaxInlineParsers = [pIdentifier]
+                      }
+
+pIdentifier :: Monad m => InlineParser m (DocH id (Char,String,Char))
+pIdentifier = try $ do
+  b <- symbol '\''
+  (_, toks) <- withRaw $ many1 $ noneOfToks [Symbol '\'']
+  e <- symbol '\''
+  return $ DocIdentifier ('\'', T.unpack (untokenize toks), '\'')
+
+
 
 {-
 instance HasPipeTable (DocH mod id) (DocH mod id) where

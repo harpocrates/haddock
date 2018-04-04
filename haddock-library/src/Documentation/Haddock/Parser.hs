@@ -22,7 +22,7 @@ module Documentation.Haddock.Parser ( parseString, parseParas
 
 import qualified Commonmark as C
 import qualified Commonmark.Extensions.Math as C
-import Documentation.Haddock.Parser.Markdown ()
+import Documentation.Haddock.Parser.Markdown (haddockSpec)
 
 import qualified Data.Text as T
 
@@ -136,7 +136,7 @@ parseParas pkg input = case parseParasState input of
   where
     textToks = C.tokenize "haddock input" (T.pack input)
     
-    doc = case runIdentity (C.parseCommonmarkWith (C.defaultSyntaxSpec <> C.mathSpec) textToks) of
+    doc = case runIdentity (C.parseCommonmarkWith haddockSpec textToks) of
             Left e -> error (show e)
             Right x -> x
 

@@ -131,10 +131,10 @@ rename dflags gre = rn
       DocUnorderedList docs -> DocUnorderedList <$> traverse rn docs
       DocOrderedList docs -> DocOrderedList <$> traverse rn docs
       DocDefList list -> DocDefList <$> traverse (\(a, b) -> (,) <$> rn a <*> rn b) list
-      DocCodeBlock doc -> DocCodeBlock <$> rn doc
+      DocCodeBlock lang doc -> DocCodeBlock lang <$> rn doc
       DocIdentifierUnchecked x -> pure (DocIdentifierUnchecked x)
       DocModule str -> pure (DocModule str)
-      DocHyperlink l -> pure (DocHyperlink l)
+      DocHyperlink (Hyperlink u l t) -> DocHyperlink <$> (Hyperlink u <$> traverse rn l <*> pure t)
       DocPic str -> pure (DocPic str)
       DocMathInline str -> pure (DocMathInline str)
       DocMathDisplay str -> pure (DocMathDisplay str)
@@ -145,6 +145,8 @@ rename dflags gre = rn
       DocString str -> pure (DocString str)
       DocHeader (Header l t) -> DocHeader . Header l <$> rn t
       DocTable t -> DocTable <$> traverse rn t
+      DocBlockQuote q -> DocBlockQuote <$> rn q
+      DocThematicBreak -> pure DocThematicBreak
 
 -- | Wrap an identifier that's out of scope (i.e. wasn't found in
 -- 'GlobalReaderEnv' during 'rename') in an appropriate doc. Currently

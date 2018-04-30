@@ -337,13 +337,15 @@ markupTag dflags = Markup {
   markupUnorderedList        = box (TagL 'u'),
   markupOrderedList          = box (TagL 'o'),
   markupDefList              = box (TagL 'u') . map (\(a,b) -> TagInline "i" a : Str " " : b),
-  markupCodeBlock            = box TagPre,
-  markupHyperlink            = \(Hyperlink url mLabel) -> (box (TagInline "a") . str) (fromMaybe url mLabel),
+  markupCodeBlock            = \_ -> box TagPre,
+  markupHyperlink            = \(Hyperlink url mLabel _) -> (box (TagInline "a")) (fromMaybe [Str url] mLabel),
   markupAName                = const $ str "",
   markupProperty             = box TagPre . str,
   markupExample              = box TagPre . str . unlines . map exampleToString,
   markupHeader               = \(Header l h) -> box (TagInline $ "h" ++ show l) h,
-  markupTable                = \(Table _ _) -> str "TODO: table"
+  markupTable                = \(Table _ _) -> str "TODO: table",
+  markupBlockQuote           = \_ -> str "TODO: block quote",
+  markupThematicBreak        = str "TODO: thematic break"
   }
 
 

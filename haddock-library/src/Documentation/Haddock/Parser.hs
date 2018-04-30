@@ -106,8 +106,8 @@ overIdentifier f d = g d
     g (DocUnorderedList x) = DocUnorderedList $ fmap g x
     g (DocOrderedList x) = DocOrderedList $ fmap g x
     g (DocDefList x) = DocDefList $ fmap (\(y, z) -> (g y, g z)) x
-    g (DocCodeBlock x) = DocCodeBlock $ g x
-    g (DocHyperlink x) = DocHyperlink x
+    g (DocCodeBlock l x) = DocCodeBlock l $ g x
+    g (DocHyperlink (Hyperlink u l t)) = DocHyperlink $ Hyperlink u (fmap g l) t
     g (DocPic x) = DocPic x
     g (DocMathInline x) = DocMathInline x
     g (DocMathDisplay x) = DocMathDisplay x
@@ -116,6 +116,8 @@ overIdentifier f d = g d
     g (DocExamples x) = DocExamples x
     g (DocHeader (Header l x)) = DocHeader . Header l $ g x
     g (DocTable (Table h b)) = DocTable (Table (map (fmap g) h) (map (fmap g) b))
+    g (DocBlockQuote x) = DocBlockQuote $ g x
+    g DocThematicBreak = DocThematicBreak
 
 
 choice' :: [Parser a] -> Parser a
@@ -307,7 +309,10 @@ mathDisplay = DocMathDisplay . T.unpack
 markdownImage :: Parser (DocH mod a)
 markdownImage = fromHyperlink <$> ("!" *> linkParser)
   where
-    fromHyperlink (Hyperlink url label) = DocPic (Picture url label)
+    fromHyperlink (Hyperlink u l t) = DocPic (Picture u (fmap unDocString l) t)
+
+    unDocString (DocString s) = s
+    unDocString _ = error "unDocString: not a DocString"
 
 -- | Paragraph parser, called by 'parseParas'.
 paragraph :: Parser (DocH mod Identifier)
@@ -684,7 +689,11 @@ takeIndent = do
 -- >> baz
 --
 birdtracks :: Parser (DocH mod a)
-birdtracks = DocCodeBlock . DocString . T.unpack . T.intercalate "\n" . stripSpace <$> some line
+birdtracks = DocCodeBlock Nothing
+           . DocString
+           . T.unpack
+           . T.intercalate "\n"
+           . stripSpace <$> some line
   where
     line = try (skipHorizontalSpace *> ">" *> takeLine)
 
@@ -749,7 +758,7 @@ property = DocProperty . T.unpack . T.strip <$> ("prop>" *> takeWhile1 (Parsec.n
 -- for markup.
 codeblock :: Parser (DocH mod Identifier)
 codeblock =
-  DocCodeBlock . parseParagraph . dropSpaces
+  DocCodeBlock Nothing . parseParagraph . dropSpaces
   <$> ("@" *> skipHorizontalSpace *> "\n" *> block' <* "@")
   where
     dropSpaces xs =
@@ -787,14 +796,17 @@ hyperlink = choice' [ angleBracketLink, markdownLink, autoUrl ]
 
 angleBracketLink :: Parser (DocH mod a)
 angleBracketLink =
-    DocHyperlink . makeLabeled Hyperlink 
+    DocHyperlink . makeLabeled (\a b c -> Hyperlink a (fmap DocString b) c) 
     <$> disallowNewline ("<" *> takeUntil ">")
 
 markdownLink :: Parser (DocH mod a)
 markdownLink = DocHyperlink <$> linkParser
 
-linkParser :: Parser Hyperlink
-linkParser = flip Hyperlink <$> label <*> (whitespace *> url)
+linkParser :: Parser (Hyperlink (DocH mod a))
+linkParser = do
+  lbl <- label
+  u <- whitespace *> url
+  pure (Hyperlink u (DocString <$> lbl) Nothing)
   where
     label :: Parser (Maybe String)
     label = Just . decode . T.strip <$> ("[" *> takeUntil "]")
@@ -823,8 +835,8 @@ autoUrl = mkLink <$> url
       Just (xs,x) | x `elem` (",.!?" :: String) -> DocHyperlink (mkHyperlink xs) `docAppend` DocString [x]
       _ -> DocHyperlink (mkHyperlink s)
 
-    mkHyperlink :: Text -> Hyperlink
-    mkHyperlink lnk = Hyperlink (T.unpack lnk) Nothing
+    mkHyperlink :: Text -> Hyperlink (DocH mod a)
+    mkHyperlink lnk = Hyperlink (T.unpack lnk) Nothing Nothing
 
 
 

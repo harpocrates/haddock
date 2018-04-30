@@ -432,23 +432,27 @@ instance Binary Example where
         result <- get bh
         return (Example expression result)
 
-instance Binary Hyperlink where
-    put_ bh (Hyperlink url label) = do
+instance Binary a => Binary (Hyperlink a) where
+    put_ bh (Hyperlink url label title) = do
         put_ bh url
         put_ bh label
+        put_ bh title
     get bh = do
         url <- get bh
         label <- get bh
-        return (Hyperlink url label)
+        title <- get bh
+        return (Hyperlink url label title)
 
 instance Binary Picture where
-    put_ bh (Picture uri title) = do
+    put_ bh (Picture uri label title) = do
         put_ bh uri
+        put_ bh label
         put_ bh title
     get bh = do
         uri <- get bh
+        label <- get bh
         title <- get bh
-        return (Picture uri title)
+        return (Picture uri label title)
 
 instance Binary a => Binary (Header a) where
     put_ bh (Header l t) = do
@@ -537,8 +541,9 @@ instance (Binary mod, Binary id) => Binary (DocH mod id) where
     put_ bh (DocDefList ak) = do
             putByte bh 10
             put_ bh ak
-    put_ bh (DocCodeBlock al) = do
+    put_ bh (DocCodeBlock l al) = do
             putByte bh 11
+            put_ bh l
             put_ bh al
     put_ bh (DocHyperlink am) = do
             putByte bh 12
@@ -576,6 +581,11 @@ instance (Binary mod, Binary id) => Binary (DocH mod id) where
     put_ bh (DocTable x) = do
             putByte bh 23
             put_ bh x
+    put_ bh (DocBlockQuote x) = do
+            putByte bh 24
+            put_ bh x
+    put_ bh DocThematicBreak = do
+            putByte bh 25
 
     get bh = do
             h <- getByte bh
@@ -614,8 +624,9 @@ instance (Binary mod, Binary id) => Binary (DocH mod id) where
                     ak <- get bh
                     return (DocDefList ak)
               11 -> do
+                    l <- get bh
                     al <- get bh
-                    return (DocCodeBlock al)
+                    return (DocCodeBlock l al)
               12 -> do
                     am <- get bh
                     return (DocHyperlink am)
@@ -652,6 +663,10 @@ instance (Binary mod, Binary id) => Binary (DocH mod id) where
               23 -> do
                     x <- get bh
                     return (DocTable x)
+              24 -> do
+                    x <- get bh
+                    return (DocBlockQuote x)
+              25 -> return DocThematicBreak
               _ -> error "invalid binary data found in the interface file"
 
 

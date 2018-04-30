@@ -58,23 +58,27 @@ parHtmlMarkup qual insertAnchors ppId = Markup {
   markupUnorderedList        = unordList,
   markupOrderedList          = ordList,
   markupDefList              = defList,
-  markupCodeBlock            = pre,
-  markupHyperlink            = \(Hyperlink url mLabel)
+  markupCodeBlock            = const pre,
+  markupHyperlink            = \(Hyperlink url mLabel t)
                                -> if insertAnchors
-                                  then anchor ! [href url]
-                                       << fromMaybe url mLabel
-                                  else toHtml $ fromMaybe url mLabel,
+                                  then anchor ! ([href url] ++ fromMaybe [] (return . title <$> t))
+                                       << fromMaybe (toHtml url) mLabel
+                                  else fromMaybe (toHtml url) mLabel,
   markupAName                = \aname
                                -> if insertAnchors
                                   then namedAnchor aname << ""
                                   else noHtml,
-  markupPic                  = \(Picture uri t) -> image ! ([src uri] ++ fromMaybe [] (return . title <$> t)),
+  markupPic                  = \(Picture uri l t) -> image ! ([src uri] ++
+                                                              fromMaybe [] (return . title <$> t) ++
+                                                              fromMaybe [] (return . alt <$> l)),
   markupMathInline           = \mathjax -> toHtml ("\\(" ++ mathjax ++ "\\)"),
   markupMathDisplay          = \mathjax -> toHtml ("\\[" ++ mathjax ++ "\\]"),
   markupProperty             = pre . toHtml,
   markupExample              = examplesToHtml,
   markupHeader               = \(Header l t) -> makeHeader l t,
-  markupTable                = \(Table h r) -> makeTable h r
+  markupTable                = \(Table h r) -> makeTable h r,
+  markupBlockQuote           = blockquote,
+  markupThematicBreak        = hr
   }
   where
     makeHeader :: Int -> Html -> Html

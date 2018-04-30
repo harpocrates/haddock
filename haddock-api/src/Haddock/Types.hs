@@ -445,7 +445,7 @@ instance (NFData a, NFData mod)
     DocUnorderedList a        -> a `deepseq` ()
     DocOrderedList a          -> a `deepseq` ()
     DocDefList a              -> a `deepseq` ()
-    DocCodeBlock a            -> a `deepseq` ()
+    DocCodeBlock a b          -> a `deepseq` b `deepseq` ()
     DocHyperlink a            -> a `deepseq` ()
     DocPic a                  -> a `deepseq` ()
     DocMathInline a           -> a `deepseq` ()
@@ -455,6 +455,8 @@ instance (NFData a, NFData mod)
     DocExamples a             -> a `deepseq` ()
     DocHeader a               -> a `deepseq` ()
     DocTable a                -> a `deepseq` ()
+    DocBlockQuote a           -> a `deepseq` ()
+    DocThematicBreak          -> () 
 
 #if !MIN_VERSION_ghc(8,0,2)
 -- These were added to GHC itself in 8.0.2
@@ -466,11 +468,11 @@ instance NFData ModuleName where rnf x = seq x ()
 instance NFData id => NFData (Header id) where
   rnf (Header a b) = a `deepseq` b `deepseq` ()
 
-instance NFData Hyperlink where
-  rnf (Hyperlink a b) = a `deepseq` b `deepseq` ()
+instance NFData id => NFData (Hyperlink id) where
+  rnf (Hyperlink a b c) = a `deepseq` b `deepseq` c `deepseq` ()
 
 instance NFData Picture where
-  rnf (Picture a b) = a `deepseq` b `deepseq` ()
+  rnf (Picture a b c) = a `deepseq` b `deepseq` c `deepseq` ()
 
 instance NFData Example where
   rnf (Example a b) = a `deepseq` b `deepseq` ()

@@ -64,14 +64,17 @@ overDocF f d = (\x -> d { _doc = x }) <$> f (_doc d)
 
 type Version = [Int]
 type Package = String
+type Lang = String
 
-data Hyperlink = Hyperlink
+data Hyperlink id = Hyperlink
   { hyperlinkUrl   :: String
-  , hyperlinkLabel :: Maybe String
-  } deriving (Eq, Show)
+  , hyperlinkLabel :: Maybe id 
+  , hyperlinkTitle :: Maybe String
+  } deriving (Eq, Show, Functor, Foldable, Traversable)
 
 data Picture = Picture
   { pictureUri   :: String
+  , pictureAlt   :: Maybe String -- What can be shown if the image fails to load
   , pictureTitle :: Maybe String
   } deriving (Eq, Show)
 
@@ -115,8 +118,8 @@ data DocH mod id
   | DocUnorderedList [DocH mod id]
   | DocOrderedList [DocH mod id]
   | DocDefList [(DocH mod id, DocH mod id)]
-  | DocCodeBlock (DocH mod id)
-  | DocHyperlink Hyperlink
+  | DocCodeBlock (Maybe Lang) (DocH mod id)
+  | DocHyperlink (Hyperlink (DocH mod id))
   | DocPic Picture
   | DocMathInline String
   | DocMathDisplay String
@@ -125,6 +128,8 @@ data DocH mod id
   | DocExamples [Example]
   | DocHeader (Header (DocH mod id))
   | DocTable (Table (DocH mod id))
+  | DocBlockQuote (DocH mod id)
+  | DocThematicBreak
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 #if MIN_VERSION_base(4,8,0)
@@ -143,8 +148,8 @@ instance Bifunctor DocH where
   bimap f g (DocUnorderedList docs) = DocUnorderedList (map (bimap f g) docs)
   bimap f g (DocOrderedList docs) = DocOrderedList (map (bimap f g) docs)
   bimap f g (DocDefList docs) = DocDefList (map (bimap f g *** bimap f g) docs)
-  bimap f g (DocCodeBlock doc) = DocCodeBlock (bimap f g doc)
-  bimap _ _ (DocHyperlink hyperlink) = DocHyperlink hyperlink
+  bimap f g (DocCodeBlock lang doc) = DocCodeBlock lang (bimap f g doc)
+  bimap f g (DocHyperlink (Hyperlink url lbl title)) = DocHyperlink (Hyperlink url (bimap f g <$> lbl) title)
   bimap _ _ (DocPic picture) = DocPic picture
   bimap _ _ (DocMathInline s) = DocMathInline s
   bimap _ _ (DocMathDisplay s) = DocMathDisplay s
@@ -153,6 +158,8 @@ instance Bifunctor DocH where
   bimap _ _ (DocExamples examples) = DocExamples examples
   bimap f g (DocHeader (Header level title)) = DocHeader (Header level (bimap f g title))
   bimap f g (DocTable (Table header body)) = DocTable (Table (map (fmap (bimap f g)) header) (map (fmap (bimap f g)) body))
+  bimap f g (DocBlockQuote doc) = DocBlockQuote (bimap f g doc)
+  bimap _ _ DocThematicBreak = DocThematicBreak
 #endif
 
 #if MIN_VERSION_base(4,10,0)
@@ -168,9 +175,10 @@ instance Bifoldable DocH where
   bifoldr f g z (DocUnorderedList docs) = foldr (flip (bifoldr f g)) z docs
   bifoldr f g z (DocOrderedList docs) = foldr (flip (bifoldr f g)) z docs
   bifoldr f g z (DocDefList docs) = foldr (\(l, r) acc -> bifoldr f g (bifoldr f g acc l) r) z docs
-  bifoldr f g z (DocCodeBlock doc) = bifoldr f g z doc
+  bifoldr f g z (DocCodeBlock _ doc) = bifoldr f g z doc
   bifoldr f g z (DocHeader (Header _ title)) = bifoldr f g z title
   bifoldr f g z (DocTable (Table header body)) = foldr (\r acc -> foldr (flip (bifoldr f g)) acc r) (foldr (\r acc -> foldr (flip (bifoldr f g)) acc r) z body) header
+  bifoldr f g z (DocBlockQuote doc) = bifoldr f g z doc 
   bifoldr _ _ z _ = z
 
 instance Bitraversable DocH where
@@ -188,8 +196,8 @@ instance Bitraversable DocH where
   bitraverse f g (DocUnorderedList docs) = DocUnorderedList <$> traverse (bitraverse f g) docs
   bitraverse f g (DocOrderedList docs) = DocOrderedList <$> traverse (bitraverse f g) docs
   bitraverse f g (DocDefList docs) = DocDefList <$> traverse (bitraverse (bitraverse f g) (bitraverse f g)) docs
-  bitraverse f g (DocCodeBlock doc) = DocCodeBlock <$> bitraverse f g doc
-  bitraverse _ _ (DocHyperlink hyperlink) = pure (DocHyperlink hyperlink)
+  bitraverse f g (DocCodeBlock lang doc) = DocCodeBlock lang <$> bitraverse f g doc
+  bitraverse f g (DocHyperlink (Hyperlink u l t)) = (\l' -> DocHyperlink (Hyperlink u l' t)) <$> traverse (bitraverse f g) l
   bitraverse _ _ (DocPic picture) = pure (DocPic picture)
   bitraverse _ _ (DocMathInline s) = pure (DocMathInline s)
   bitraverse _ _ (DocMathDisplay s) = pure (DocMathDisplay s)
@@ -198,6 +206,8 @@ instance Bitraversable DocH where
   bitraverse _ _ (DocExamples examples) = pure (DocExamples examples)
   bitraverse f g (DocHeader (Header level title)) = (DocHeader . Header level) <$> bitraverse f g title
   bitraverse f g (DocTable (Table header body)) = (\h b -> DocTable (Table h b)) <$> traverse (traverse (bitraverse f g)) header <*> traverse (traverse (bitraverse f g)) body
+  bitraverse f g (DocBlockQuote doc) = DocBlockQuote <$> bitraverse f g doc
+  bitraverse _ _ DocThematicBreak = pure DocThematicBreak
 #endif
 
 -- | 'DocMarkupH' is a set of instructions for marking up documentation.
@@ -223,8 +233,8 @@ data DocMarkupH mod id a = Markup
   , markupUnorderedList        :: [a] -> a
   , markupOrderedList          :: [a] -> a
   , markupDefList              :: [(a,a)] -> a
-  , markupCodeBlock            :: a -> a
-  , markupHyperlink            :: Hyperlink -> a
+  , markupCodeBlock            :: Maybe Lang -> a -> a
+  , markupHyperlink            :: Hyperlink a -> a
   , markupAName                :: String -> a
   , markupPic                  :: Picture -> a
   , markupMathInline           :: String -> a
@@ -233,4 +243,6 @@ data DocMarkupH mod id a = Markup
   , markupExample              :: [Example] -> a
   , markupHeader               :: Header a -> a
   , markupTable                :: Table a -> a
+  , markupBlockQuote           :: a -> a
+  , markupThematicBreak        :: a
   }

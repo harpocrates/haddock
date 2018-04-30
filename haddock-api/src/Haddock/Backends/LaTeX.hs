@@ -1133,13 +1133,15 @@ parLatexMarkup ppId = Markup {
   markupMathDisplay          = \p _ -> markupMathDisplay p,
   markupOrderedList          = \p v -> enumeratedList (map ($v) p) $$ text "",
   markupDefList              = \l v -> descriptionList (map (\(a,b) -> (a v, b v)) l),
-  markupCodeBlock            = \p _ -> quote (verb (p Verb)) $$ text "",
-  markupHyperlink            = \l _ -> markupLink l,
+  markupCodeBlock            = \_ p _ -> quote (verb (p Verb)) $$ text "",
+  markupHyperlink            = \(Hyperlink u l t) p -> markupLink u (l <*> pure p) t,
   markupAName                = \_ _ -> empty,
   markupProperty             = \p _ -> quote $ verb $ text p,
   markupExample              = \e _ -> quote $ verb $ text $ unlines $ map exampleToString e,
   markupHeader               = \(Header l h) p -> header l (h p),
-  markupTable                = \(Table h b) p -> table h b p
+  markupTable                = \(Table h b) p -> table h b p,
+  markupBlockQuote           = \b p -> vcat [ text "\\begin{quote}", b p , text "\\end{quote}" ],
+  markupThematicBreak        = \_ -> text "\\par\\medskip\\noindent\\hrulefill\\par\\medskip"
   }
   where
     header 1 d = text "\\section*" <> braces d
@@ -1154,12 +1156,12 @@ parLatexMarkup ppId = Markup {
     fixString Verb  s = s
     fixString Mono  s = latexMonoFilter s
 
-    markupLink (Hyperlink url mLabel) = case mLabel of
-      Just label -> text "\\href" <> braces (text url) <> braces (text label)
+    markupLink url mLabel _title = case mLabel of
+      Just label -> text "\\href" <> braces (text url) <> braces label
       Nothing    -> text "\\url"  <> braces (text url)
 
     -- Is there a better way of doing this? Just a space is an aribtrary choice.
-    markupPic (Picture uri title) = parens (imageText title)
+    markupPic (Picture uri _alt title) = parens (imageText title)
       where
         imageText Nothing = beg
         imageText (Just t) = beg <> text " " <> text t

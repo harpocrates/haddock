@@ -86,13 +86,13 @@ processModuleHeader dflags pkgName gre safety mayStr = do
 -- fallbacks in case we can't locate the identifiers.
 --
 -- See the comments in the source for implementation commentary.
-rename :: DynFlags -> GlobalRdrEnv -> Doc RdrName -> ErrMsgM (Doc Name)
+rename :: DynFlags -> GlobalRdrEnv -> Doc NsRdrName -> ErrMsgM (Doc Name)
 rename dflags gre = rn
   where
     rn d = case d of
       DocAppend a b -> DocAppend <$> rn a <*> rn b
       DocParagraph doc -> DocParagraph <$> rn doc
-      DocIdentifier x -> do
+      DocIdentifier (NsRdrName ns x) -> do
         -- Generate the choices for the possible kind of thing this
         -- is.
         let choices = dataTcOccs x
@@ -100,7 +100,13 @@ rename dflags gre = rn
         -- the names.
         let names = concatMap (\c -> map gre_name (lookupGRE_RdrName c gre)) choices
 
-        case names of
+        -- Filter according to the namespace
+        let filterNamespace = case ns of
+                                Value -> filter (not . isTyConName)
+                                Type -> filter isTyConName
+                                None -> id
+
+        case filterNamespace names of
           -- We found no names in the env so we start guessing.
           [] ->
             case choices of

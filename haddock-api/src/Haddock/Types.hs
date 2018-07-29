@@ -37,7 +37,7 @@ import Documentation.Haddock.Parser
 import Documentation.Haddock.Types
 import BasicTypes (Fixity(..))
 
-import GHC hiding (NoLink)
+import GHC hiding (NoLink, Token)
 import DynFlags (Language, HasDynFlags(..))
 import qualified GHC.LanguageExtensions as LangExt
 import OccName
@@ -47,6 +47,7 @@ import Control.Monad (ap)
 import Control.Monad.IO.Class
 
 import Haddock.Backends.Hyperlinker.Types
+import HieTypes
 
 -----------------------------------------------------------------------------
 -- * Convenient synonyms
@@ -135,7 +136,8 @@ data Interface = Interface
 
     -- | Tokenized source code of module (avaliable if Haddock is invoked with
     -- source generation flag).
-  , ifaceTokenizedSrc :: !(Maybe [RichToken])
+  , ifaceTokenizedSrc :: !(Maybe [Token])
+  , ifaceHieFile :: !(Maybe HieFile)
   }
 
 type WarningMap = Map Name (Doc Name)

@@ -439,6 +439,10 @@ withGhc' libDir flags ghcActs = runGhc (Just libDir) $ do
                          [ -- Include docstrings in .hi-files.
                            Opt_Haddock
 
+                           -- Include IDE info
+                           -- TODO: do this selectively
+                         , Opt_IdeInfo
+
                            -- Ignore any aspects of .hi-files except docs.
                          , Opt_SkipIfaceVersionCheck
 

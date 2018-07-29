@@ -25,6 +25,11 @@ import Haddock.GhcUtils
 import Haddock.Utils
 import Haddock.Convert
 import Haddock.Interface.LexParseRn
+<<<<<<< HEAD
+=======
+import Haddock.Backends.Hyperlinker.Types
+import Haddock.Backends.Hyperlinker.Parser as Hyperlinker
+>>>>>>> b1c205a9... Use hiefiles to generate hyperlinked source
 
 import qualified Data.Map as M
 import Data.Map (Map)
@@ -38,8 +43,12 @@ import Data.Traversable
 import Avail hiding (avail)
 import qualified Avail
 import ConLike (ConLike(..))
+<<<<<<< HEAD
 import GHC
 import GhcMonad
+=======
+import GHC hiding (Token)
+>>>>>>> b1c205a9... Use hiefiles to generate hyperlinked source
 import HscTypes
 import Name
 import NameSet
@@ -53,7 +62,16 @@ import BasicTypes ( WarningTxt(..), WarningSort(..), warningTxtContents )
 import qualified Outputable as O
 import DynFlags ( getDynFlags )
 
+<<<<<<< HEAD
 -- | Use a 'ModIface' to produce an 'Interface'.
+=======
+import Data.IORef
+import HieTypes
+import HieBin
+
+
+-- | Use a 'TypecheckedModule' to produce an 'Interface'.
+>>>>>>> b1c205a9... Use hiefiles to generate hyperlinked source
 -- To do this, we need access to already processed modules in the topological
 -- sort. That's what's in the 'IfaceMap'.
 createInterface :: ModIface
@@ -141,6 +159,9 @@ createInterface mod_iface flags modMap instIfaceMap = do
         | otherwise = exportItems
       !prunedExportItems = seqList prunedExportItems' `seq` prunedExportItems'
 
+  -- Get the tokenized source
+  (tokenizedSrc,hieFile) <- mkMaybeTokenizedSrc dflags flags tm
+
   return $! Interface {
     ifaceMod               = mdl
   , ifaceIsSig             = is_sig
@@ -163,7 +184,8 @@ createInterface mod_iface flags modMap instIfaceMap = do
   , ifaceRnOrphanInstances = []
   , ifaceHaddockCoverage   = coverage
   , ifaceWarningMap        = warningMap
-  , ifaceTokenizedSrc      = Nothing -- TODO: Get this from the extended .hie-files.
+  , ifaceTokenizedSrc      = tokenizedSrc
+  , ifaceHieFile           = hieFile
   }
 
 -- | Given the information that comes out of a 'DsiModExport', decide which of
@@ -662,3 +684,50 @@ mkVisibleNames instMap exports opts
 seqList :: [a] -> ()
 seqList [] = ()
 seqList (x : xs) = x `seq` seqList xs
+
+mkMaybeTokenizedSrc :: DynFlags -> [Flag] -> TypecheckedModule
+                    -> ErrMsgGhc (Maybe [Token], Maybe HieFile)
+mkMaybeTokenizedSrc dflags flags tm
+    | Flag_HyperlinkedSource `elem` flags = case renamedSource tm of
+        Just src -> do
+            tokens <- liftGhcToErrMsgGhc (liftIO (mkTokenizedSrc dflags summary src))
+            hiefile <- liftGhcToErrMsgGhc $ do
+              env <- getSession
+              nc <- liftIO $ readIORef $ hsc_NC env
+              let hiefile = ml_hie_file $ ms_location summary
+              (file, nc') <- liftIO $ readHieFile nc hiefile
+              liftIO $ writeIORef (hsc_NC env) nc'
+              return file
+            return (Just tokens,Just hiefile)
+        Nothing -> do
+            liftErrMsg . tell . pure $ concat
+                [ "Warning: Cannot hyperlink module \""
+                , moduleNameString . ms_mod_name $ summary
+                , "\" because renamed source is not available"
+                ]
+            return (Nothing,Nothing)
+    | otherwise = return (Nothing,Nothing)
+  where
+    summary = pm_mod_summary . tm_parsed_module $ tm
+
+mkTokenizedSrc :: DynFlags -> ModSummary -> RenamedSource -> IO [Token]
+mkTokenizedSrc dflags ms src = do
+  -- make sure to read the whole file at once otherwise
+  -- we run out of file descriptors (see #495)
+  rawSrc <- BS.readFile (msHsFilePath ms) >>= evaluate
+  let tokens = Hyperlinker.parse dflags filepath (Utf8.decodeUtf8 rawSrc)
+  return tokens
+  where
+    filepath = msHsFilePath ms
+
+-- | Find a stand-alone documentation comment by its name.
+findNamedDoc :: String -> [HsDecl GhcRn] -> ErrMsgM (Maybe HsDocString)
+findNamedDoc name = search
+  where
+    search [] = do
+      tell ["Cannot find documentation for: $" ++ name]
+      return Nothing
+    search (DocD _ (DocCommentNamed name' doc) : rest)
+      | name == name' = return (Just doc)
+      | otherwise = search rest
+    search (_other_decl : rest) = search rest

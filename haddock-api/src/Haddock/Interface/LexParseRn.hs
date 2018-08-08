@@ -37,7 +37,7 @@ import RdrName
 import RdrHsSyn (setRdrNameSpace)
 import EnumSet
 
-processDocStrings :: DynFlags -> Maybe Package -> GlobalRdrEnv -> [HsDocString]
+processDocStrings :: DynFlags -> Maybe Package -> GlobalRdrEnv -> [LHsDocString]
                   -> ErrMsgM (Maybe (MDoc Name))
 processDocStrings dflags pkg gre strs = do
   mdoc <- metaDocConcat <$> traverse (processDocStringParas dflags pkg gre) strs
@@ -48,13 +48,13 @@ processDocStrings dflags pkg gre strs = do
     MetaDoc { _meta = Meta Nothing Nothing, _doc = DocEmpty } -> pure Nothing
     x -> pure (Just x)
 
-processDocStringParas :: DynFlags -> Maybe Package -> GlobalRdrEnv -> HsDocString -> ErrMsgM (MDoc Name)
-processDocStringParas dflags pkg gre hds =
-  overDocF (rename dflags gre) $ parseParas dflags pkg (unpackHDS hds)
+processDocStringParas :: DynFlags -> Maybe Package -> GlobalRdrEnv -> LHsDocString -> ErrMsgM (MDoc Name)
+processDocStringParas dflags pkg gre lhds =
+  overDocF (rename dflags gre) $ parseParas dflags pkg (fmap unpackHDS lhds)
 
-processDocString :: DynFlags -> GlobalRdrEnv -> HsDocString -> ErrMsgM (Doc Name)
-processDocString dflags gre hds =
-  rename dflags gre $ parseString dflags (unpackHDS hds)
+processDocString :: DynFlags -> GlobalRdrEnv -> LHsDocString -> ErrMsgM (Doc Name)
+processDocString dflags gre lhds =
+  rename dflags gre $ parseString dflags (fmap unpackHDS lhds)
 
 processModuleHeader :: DynFlags -> Maybe Package -> GlobalRdrEnv -> SafeHaskellMode -> Maybe LHsDocString
                     -> ErrMsgM (HaddockModInfo Name, Maybe (MDoc Name))
@@ -62,9 +62,8 @@ processModuleHeader dflags pkgName gre safety mayStr = do
   (hmi, doc) <-
     case mayStr of
       Nothing -> return failure
-      Just (L _ hds) -> do
-        let str = unpackHDS hds
-            (hmi, doc) = parseModuleHeader dflags pkgName str
+      Just str -> do 
+        let (hmi, doc) = parseModuleHeader dflags pkgName (fmap unpackHDS str)
         !descr <- case hmi_description hmi of
                     Just hmi_descr -> Just <$> rename dflags gre hmi_descr
                     Nothing        -> pure Nothing
@@ -95,7 +94,7 @@ rename dflags gre = rn
     rn d = case d of
       DocAppend a b -> DocAppend <$> rn a <*> rn b
       DocParagraph doc -> DocParagraph <$> rn doc
-      DocIdentifier (NsRdrName ns x) -> do
+      DocIdentifier (NsRdrName ns x sp) -> do
         let occ = rdrNameOcc x
             isValueName = isDataOcc occ || isVarOcc occ
 
@@ -129,14 +128,14 @@ rename dflags gre = rn
               -- type constructor names (such as in #253). So now we
               -- only get type constructor links if they are actually
               -- in scope.
-              a:_ -> outOfScope dflags ns a
+              a:_ -> outOfScope dflags sp ns a
 
           -- There is only one name in the environment that matches so
           -- use it.
           [a] -> pure (DocIdentifier (gre_name a))
 
           -- There are multiple names available.
-          gres -> ambiguous dflags x gres
+          gres -> ambiguous dflags sp x gres
 
       DocWarning doc -> DocWarning <$> rn doc
       DocEmphasis doc -> DocEmphasis <$> rn doc
@@ -168,8 +167,8 @@ rename dflags gre = rn
 -- users shouldn't rely on this doing the right thing. See tickets
 -- #253 and #375 on the confusion this causes depending on which
 -- default we pick in 'rename'.
-outOfScope :: DynFlags -> Namespace -> RdrName -> ErrMsgM (Doc a)
-outOfScope dflags ns x =
+outOfScope :: DynFlags -> SrcSpan -> Namespace -> RdrName -> ErrMsgM (Doc a)
+outOfScope dflags sp ns x =
   case x of
     Unqual occ -> warnAndMonospace occ
     Qual mdl occ -> pure (DocIdentifierUnchecked (mdl, occ))
@@ -182,7 +181,8 @@ outOfScope dflags ns x =
                None -> ""
 
     warnAndMonospace a = do
-      tell ["Warning: " ++ prefix ++ "'" ++ showPpr dflags a ++ "' is out of scope.\n" ++
+      tell ["Warning: " ++ prefix ++ "'" ++ showPpr dflags a ++ "' (used at " ++
+                           showPpr dflags sp ++ ") is out of scope.\n" ++
             "    If you qualify the identifier, haddock can try to link it\n" ++
             "    it anyway."]
       pure (monospaced a)
@@ -194,13 +194,14 @@ outOfScope dflags ns x =
 --
 -- Emits a warning if the 'GlobalRdrElts's don't belong to the same type or class.
 ambiguous :: DynFlags
+          -> SrcSpan
           -> RdrName
           -> [GlobalRdrElt] -- ^ More than one @gre@s sharing the same `RdrName` above.
           -> ErrMsgM (Doc Name)
-ambiguous dflags x gres = do
+ambiguous dflags sp x gres = do
   let noChildren = map availName (gresToAvailInfo gres)
       dflt = maximumBy (comparing (isLocalName &&& isTyConName)) noChildren
-      msg = "Warning: " ++ x_str ++ " is ambiguous. It is defined\n" ++
+      msg = "Warning: " ++ x_str ++ " (used at " ++ showPpr dflags sp ++ ") is ambiguous. It is defined\n" ++
             concatMap (\n -> "    * " ++ defnLoc n ++ "\n") (map gre_name gres) ++
             "    You may be able to disambiguate the identifier by qualifying it or\n" ++
             "    by specifying the type/value namespace explicitly.\n" ++

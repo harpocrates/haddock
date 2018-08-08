@@ -25,20 +25,24 @@ import Documentation.Haddock.Types
 import Haddock.Types (NsRdrName(..))
 import Lexer (mkPState, unP, ParseResult(POk))
 import Parser (parseIdentifier)
-import SrcLoc (mkRealSrcLoc, GenLocated(L))
+import SrcLoc (mkRealSrcLoc, GenLocated(L), Located, SrcSpan)
 import StringBuffer (stringToStringBuffer)
 
-parseParas :: DynFlags -> Maybe Package -> String -> MetaDoc mod NsRdrName
-parseParas d p = overDoc (P.overIdentifier (parseIdent d)) . P.parseParas p
+parseParas :: DynFlags -> Maybe Package -> Located String -> MetaDoc mod NsRdrName
+parseParas d p (L sp s) = overDoc (P.overIdentifier (parseIdent d sp)) . P.parseParas p $ s
 
-parseString :: DynFlags -> String -> DocH mod NsRdrName
-parseString d = P.overIdentifier (parseIdent d) . P.parseString
+parseString :: DynFlags -> Located String -> DocH mod NsRdrName
+parseString d (L sp s) = P.overIdentifier (parseIdent d sp) . P.parseString $ s
 
-parseIdent :: DynFlags -> Namespace -> String -> Maybe NsRdrName
-parseIdent dflags ns str0 =
+parseIdent :: DynFlags
+           -> SrcSpan       -- ^ span of the initial docstring
+           -> Namespace     -- ^ namespace of the identifier (value, type, none)
+           -> String        -- ^ identifier content
+           -> Maybe NsRdrName
+parseIdent dflags sp ns str0 =
   let buffer = stringToStringBuffer str0
       realSrcLc = mkRealSrcLoc (mkFastString "<unknown file>") 0 0
       pstate = mkPState dflags buffer realSrcLc
   in case unP parseIdentifier pstate of
-    POk _ (L _ name) -> Just (NsRdrName ns name)
+    POk _ (L _ name) -> Just (NsRdrName ns name sp)
     _ -> Nothing

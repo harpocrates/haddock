@@ -289,6 +289,7 @@ type LinkEnv = Map Name Module
 data NsRdrName = NsRdrName
   { namespace :: !Namespace
   , rdrName :: !RdrName
+  , nameLoc :: !SrcSpan 
   }
 
 -- | Extends 'Name' with cross-reference information.

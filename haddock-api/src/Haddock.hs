@@ -621,7 +621,15 @@ getPrologue dflags flags =
       h <- openFile filename ReadMode
       hSetEncoding h utf8
       str <- hGetContents h -- semi-closes the handle
-      return . Just $! second rdrName $ parseParas dflags Nothing str
+
+      -- We need to synthetically create a source span corresponding to the
+      -- prologue. That way, any identifier warnings will have a location to
+      -- point to.
+      let prologueLoc = mkSrcLoc (mkFastString filename) 1 1
+          prologueSpan = mkSrcSpan prologueLoc prologueLoc
+          lstr = L prologueSpan str
+
+      return . Just $! second rdrName $ parseParas dflags Nothing lstr
     _ -> throwE "multiple -p/--prologue options"
 
 

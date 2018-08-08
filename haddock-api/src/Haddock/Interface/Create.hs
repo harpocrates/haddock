@@ -31,7 +31,6 @@ import Haddock.Backends.Hyperlinker.Types
 import Haddock.Backends.Hyperlinker.Ast as Hyperlinker
 import Haddock.Backends.Hyperlinker.Parser as Hyperlinker
 
-import Data.Bifunctor
 import Data.Bitraversable
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
@@ -117,7 +116,7 @@ createInterface tm flags modMap instIfaceMap = do
 
   let declsWithDocs = topDecls group_
 
-      exports0 = fmap (reverse . map (first unLoc)) mayExports
+      exports0 = fmap reverse mayExports
       exports
         | OptIgnoreExports `elem` opts = Nothing
         | otherwise = exports0
@@ -304,11 +303,11 @@ moduleWarning dflags gre (WarnAll w) = Just <$> parseWarning dflags gre w
 
 parseWarning :: DynFlags -> GlobalRdrEnv -> WarningTxt -> ErrMsgM (Doc Name)
 parseWarning dflags gre w = case w of
-  DeprecatedTxt _ msg -> format "Deprecated: " (foldMap (fastStringToByteString . sl_fs . unLoc) msg)
-  WarningTxt    _ msg -> format "Warning: "    (foldMap (fastStringToByteString . sl_fs . unLoc) msg)
+  DeprecatedTxt (L sp _) msg -> format "Deprecated: " sp (foldMap (fastStringToByteString . sl_fs . unLoc) msg)
+  WarningTxt    (L sp _) msg -> format "Warning: "    sp (foldMap (fastStringToByteString . sl_fs . unLoc) msg)
   where
-    format x bs = DocWarning . DocParagraph . DocAppend (DocString x)
-                  <$> processDocString dflags gre (mkHsDocStringUtf8ByteString bs)
+    format x sp bs = DocWarning . DocParagraph . DocAppend (DocString x)
+                     <$> processDocString dflags gre (L sp (mkHsDocStringUtf8ByteString bs))
 
 
 -------------------------------------------------------------------------------
@@ -360,7 +359,7 @@ mkMaps :: DynFlags
        -> Maybe Package  -- this package
        -> GlobalRdrEnv
        -> [Name]
-       -> [(LHsDecl GhcRn, [HsDocString])]
+       -> [(LHsDecl GhcRn, [LHsDocString])]
        -> ErrMsgM Maps
 mkMaps dflags pkgName gre instances decls = do
   (a, b, c) <- unzip3 <$> traverse mappings decls
@@ -379,14 +378,14 @@ mkMaps dflags pkgName gre instances decls = do
     filterMapping :: (b -> Bool) ->  [[(a, b)]] -> [[(a, b)]]
     filterMapping p = map (filter (p . snd))
 
-    mappings :: (LHsDecl GhcRn, [HsDocString])
+    mappings :: (LHsDecl GhcRn, [LHsDocString])
              -> ErrMsgM ( [(Name, MDoc Name)]
                         , [(Name, Map Int (MDoc Name))]
                         , [(Name,  [LHsDecl GhcRn])]
                         )
     mappings (ldecl, docStrs) = do
       let L l decl = ldecl
-          declDoc :: [HsDocString] -> Map Int HsDocString
+          declDoc :: [LHsDocString] -> Map Int LHsDocString
                   -> ErrMsgM (Maybe (MDoc Name), Map Int (MDoc Name))
           declDoc strs m = do
             doc' <- processDocStrings dflags pkgName gre strs
@@ -396,7 +395,7 @@ mkMaps dflags pkgName gre instances decls = do
       (doc, args) <- declDoc docStrs (declTypeDocs decl)
 
       let
-          subs :: [(Name, [HsDocString], Map Int HsDocString)]
+          subs :: [(Name, [LHsDocString], Map Int LHsDocString)]
           subs = subordinates instanceMap decl
 
       (subDocs, subArgs) <- unzip <$> traverse (\(_, strs, m) -> declDoc strs m) subs
@@ -447,7 +446,7 @@ mkMaps dflags pkgName gre instances decls = do
 -- family of a type class.
 subordinates :: InstMap
              -> HsDecl GhcRn
-             -> [(Name, [HsDocString], Map Int HsDocString)]
+             -> [(Name, [LHsDocString], Map Int LHsDocString)]
 subordinates instMap decl = case decl of
   InstD _ (ClsInstD _ d) -> do
     DataFamInstDecl { dfid_eqn = HsIB { hsib_body =
@@ -464,31 +463,31 @@ subordinates instMap decl = case decl of
     classSubs dd = [ (name, doc, declTypeDocs d) | (L _ d, doc) <- classDecls dd
                    , name <- getMainDeclBinder d, not (isValD d)
                    ]
-    dataSubs :: HsDataDefn GhcRn -> [(Name, [HsDocString], Map Int HsDocString)]
+    dataSubs :: HsDataDefn GhcRn -> [(Name, [LHsDocString], Map Int LHsDocString)]
     dataSubs dd = constrs ++ fields ++ derivs
       where
         cons = map unL $ (dd_cons dd)
-        constrs = [ (unL cname, maybeToList $ fmap unL $ con_doc c, conArgDocs c)
+        constrs = [ (unL cname, maybeToList $ con_doc c, conArgDocs c)
                   | c <- cons, cname <- getConNames c ]
-        fields  = [ (extFieldOcc n, maybeToList $ fmap unL doc, M.empty)
+        fields  = [ (extFieldOcc n, maybeToList $ doc, M.empty)
                   | RecCon flds <- map getConArgs cons
                   , L _ (ConDeclField _ ns _ doc) <- (unLoc flds)
                   , L _ n <- ns ]
-        derivs  = [ (instName, [unL doc], M.empty)
+        derivs  = [ (instName, [doc], M.empty)
                   | HsIB { hsib_body = L l (HsDocTy _ _ doc) }
                       <- concatMap (unLoc . deriv_clause_tys . unLoc) $
                            unLoc $ dd_derivs dd
                   , Just instName <- [M.lookup l instMap] ]
 
 -- | Extract constructor argument docs from inside constructor decls.
-conArgDocs :: ConDecl GhcRn -> Map Int HsDocString
+conArgDocs :: ConDecl GhcRn -> Map Int LHsDocString
 conArgDocs con = case getConArgs con of
                    PrefixCon args -> go 0 (map unLoc args ++ ret)
                    InfixCon arg1 arg2 -> go 0 ([unLoc arg1, unLoc arg2] ++ ret)
                    RecCon _ -> go 1 ret
   where
-    go n (HsDocTy _ _ (L _ ds) : tys) = M.insert n ds $ go (n+1) tys
-    go n (HsBangTy _ _ (L _ (HsDocTy _ _ (L _ ds))) : tys) = M.insert n ds $ go (n+1) tys
+    go n (HsDocTy _ _ ds : tys) = M.insert n ds $ go (n+1) tys
+    go n (HsBangTy _ _ (L _ (HsDocTy _ _ ds)) : tys) = M.insert n ds $ go (n+1) tys
     go n (_ : tys) = go (n+1) tys
     go _ [] = M.empty
 
@@ -497,7 +496,7 @@ conArgDocs con = case getConArgs con of
             _ -> []
 
 -- | Extract function argument docs from inside top-level decls.
-declTypeDocs :: HsDecl GhcRn -> Map Int HsDocString
+declTypeDocs :: HsDecl GhcRn -> Map Int LHsDocString
 declTypeDocs (SigD  _ (TypeSig _ _ ty))          = typeDocs (unLoc (hsSigWcType ty))
 declTypeDocs (SigD  _ (ClassOpSig _ _ _ ty))     = typeDocs (unLoc (hsSigType ty))
 declTypeDocs (SigD  _ (PatSynSig _ _ ty))        = typeDocs (unLoc (hsSigType ty))
@@ -506,19 +505,19 @@ declTypeDocs (TyClD _ (SynDecl { tcdRhs = ty })) = typeDocs (unLoc ty)
 declTypeDocs _ = M.empty
 
 -- | Extract function argument docs from inside types.
-typeDocs :: HsType GhcRn -> Map Int HsDocString
+typeDocs :: HsType GhcRn -> Map Int LHsDocString
 typeDocs = go 0
   where
     go n (HsForAllTy { hst_body = ty }) = go n (unLoc ty)
     go n (HsQualTy   { hst_body = ty }) = go n (unLoc ty)
-    go n (HsFunTy _ (L _ (HsDocTy _ _ (L _ x))) (L _ ty)) = M.insert n x $ go (n+1) ty
+    go n (HsFunTy _ (L sp (HsDocTy _ _ (L _ x))) (L _ ty)) = M.insert n (L sp x) $ go (n+1) ty
     go n (HsFunTy _ _ ty) = go (n+1) (unLoc ty)
-    go n (HsDocTy _ _ (L _ doc)) = M.singleton n doc
+    go n (HsDocTy _ _ doc) = M.singleton n doc
     go _ _ = M.empty
 
 -- | All the sub declarations of a class (that we handle), ordered by
 -- source location, with documentation attached if it exists.
-classDecls :: TyClDecl GhcRn -> [(LHsDecl GhcRn, [HsDocString])]
+classDecls :: TyClDecl GhcRn -> [(LHsDecl GhcRn, [LHsDocString])]
 classDecls class_ = filterDecls . collectDocs . sortByLoc $ decls
   where
     decls = docs ++ defs ++ sigs ++ ats
@@ -530,7 +529,7 @@ classDecls class_ = filterDecls . collectDocs . sortByLoc $ decls
 
 -- | The top-level declarations of a module that we care about,
 -- ordered by source location, with documentation attached if it exists.
-topDecls :: HsGroup GhcRn -> [(LHsDecl GhcRn, [HsDocString])]
+topDecls :: HsGroup GhcRn -> [(LHsDecl GhcRn, [LHsDocString])]
 topDecls =
   filterClasses . filterDecls . collectDocs . sortByLoc . ungroup
 
@@ -580,7 +579,7 @@ sortByLoc = sortBy (comparing getLoc)
 
 -- | Filter out declarations that we don't handle in Haddock
 filterDecls :: [(LHsDecl a, doc)] -> [(LHsDecl a, doc)]
-filterDecls = filter (isHandled . unL . fst)
+filterDecls = filter (isHandled . unLoc . fst)
   where
     isHandled (ForD _ (ForeignImport {})) = True
     isHandled (TyClD {})  = True
@@ -612,15 +611,15 @@ filterClasses decls = [ if isClassD d then (L loc (filterClass d), doc) else x
 
 
 -- | Collect docs and attach them to the right declarations.
-collectDocs :: [LHsDecl a] -> [(LHsDecl a, [HsDocString])]
+collectDocs :: [LHsDecl a] -> [(LHsDecl a, [LHsDocString])]
 collectDocs = go Nothing []
   where
     go Nothing _ [] = []
     go (Just prev) docs [] = finished prev docs []
-    go prev docs (L _ (DocD _ (DocCommentNext str)) : ds)
-      | Nothing <- prev = go Nothing (str:docs) ds
-      | Just decl <- prev = finished decl docs (go Nothing [str] ds)
-    go prev docs (L _ (DocD _ (DocCommentPrev str)) : ds) = go prev (str:docs) ds
+    go prev docs (L sp (DocD _ (DocCommentNext str)) : ds)
+      | Nothing <- prev = go Nothing (L sp str:docs) ds
+      | Just decl <- prev = finished decl docs (go Nothing [L sp str] ds)
+    go prev docs (L sp (DocD _ (DocCommentPrev str)) : ds) = go prev (L sp str:docs) ds
     go Nothing docs (d:ds) = go (Just d) docs ds
     go (Just prev) docs (d:ds) = finished prev docs (go (Just d) [] ds)
 
@@ -647,7 +646,7 @@ mkExportItems
   -> FixMap
   -> M.Map ModuleName [ModuleName]
   -> [SrcSpan]          -- splice locations
-  -> Maybe [(IE GhcRn, Avails)]
+  -> Maybe [(LIE GhcRn, Avails)]
   -> Avails             -- exported stuff from this module
   -> InstIfaceMap
   -> DynFlags
@@ -663,22 +662,22 @@ mkExportItems
         allExports
     Just exports -> liftM concat $ mapM lookupExport exports
   where
-    lookupExport (IEGroup _ lev docStr, _)  = liftErrMsg $ do
-      doc <- processDocString dflags gre docStr
+    lookupExport (L sp (IEGroup _ lev docStr), _)  = liftErrMsg $ do
+      doc <- processDocString dflags gre (L sp docStr)
       return [ExportGroup lev "" doc]
 
-    lookupExport (IEDoc _ docStr, _)        = liftErrMsg $ do
-      doc <- processDocStringParas dflags pkgName gre docStr
+    lookupExport (L sp (IEDoc _ docStr), _)        = liftErrMsg $ do
+      doc <- processDocStringParas dflags pkgName gre (L sp docStr)
       return [ExportDoc doc]
 
-    lookupExport (IEDocNamed _ str, _)      = liftErrMsg $
-      findNamedDoc str [ unL d | d <- decls ] >>= \case
+    lookupExport (L _ (IEDocNamed _ str), _)      = liftErrMsg $
+      findNamedDoc str decls >>= \case
         Nothing -> return  []
         Just docStr -> do
           doc <- processDocStringParas dflags pkgName gre docStr
           return [ExportDoc doc]
 
-    lookupExport (IEModuleContents _ (L _ mod_name), _)
+    lookupExport ((L _ (IEModuleContents _ (L _ mod_name))), _)
       -- only consider exporting a module if we are sure we
       -- are really exporting the whole module and not some
       -- subset. We also look through module aliases here.
@@ -1013,11 +1012,11 @@ fullModuleContents is_sig modMap pkgName thisMod semMod warnings gre exportedNam
   let availEnv = availsToNameEnv (nubAvails avails)
   (concat . concat) `fmap` (for decls $ \decl -> do
     case decl of
-      (L _ (DocD _ (DocGroup lev docStr))) -> do
-        doc <- liftErrMsg (processDocString dflags gre docStr)
+      (L sp (DocD _ (DocGroup lev docStr))) -> do
+        doc <- liftErrMsg (processDocString dflags gre (L sp docStr))
         return [[ExportGroup lev "" doc]]
-      (L _ (DocD _ (DocCommentNamed _ docStr))) -> do
-        doc <- liftErrMsg (processDocStringParas dflags pkgName gre docStr)
+      (L sp (DocD _ (DocCommentNamed _ docStr))) -> do
+        doc <- liftErrMsg (processDocStringParas dflags pkgName gre (L sp docStr))
         return [[ExportDoc doc]]
       (L _ (ValD _ valDecl))
         | name:_ <- collectHsBindBinders valDecl
@@ -1221,13 +1220,13 @@ mkTokenizedSrc dflags ms src = do
     filepath = msHsFilePath ms
 
 -- | Find a stand-alone documentation comment by its name.
-findNamedDoc :: String -> [HsDecl GhcRn] -> ErrMsgM (Maybe HsDocString)
+findNamedDoc :: String -> [LHsDecl GhcRn] -> ErrMsgM (Maybe LHsDocString)
 findNamedDoc name = search
   where
     search [] = do
       tell ["Cannot find documentation for: $" ++ name]
       return Nothing
-    search (DocD _ (DocCommentNamed name' doc) : rest)
-      | name == name' = return (Just doc)
+    search (L sp (DocD _ (DocCommentNamed name' doc)) : rest)
+      | name == name' = return (Just (L sp doc))
       | otherwise = search rest
     search (_other_decl : rest) = search rest

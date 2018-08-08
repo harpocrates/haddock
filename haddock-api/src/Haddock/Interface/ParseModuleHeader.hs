@@ -16,6 +16,7 @@ import Data.Char
 import DynFlags
 import Haddock.Parser
 import Haddock.Types
+import SrcLoc (GenLocated(L), Located)
 
 -- -----------------------------------------------------------------------------
 -- Parsing module headers
@@ -23,8 +24,11 @@ import Haddock.Types
 -- NB.  The headers must be given in the order Module, Description,
 -- Copyright, License, Maintainer, Stability, Portability, except that
 -- any or all may be omitted.
-parseModuleHeader :: DynFlags -> Maybe Package -> String -> (HaddockModInfo NsRdrName, MDoc NsRdrName)
-parseModuleHeader dflags pkgName str0 =
+parseModuleHeader :: DynFlags
+                  -> Maybe Package   -- ^ needed for @since annotations
+                  -> Located String  -- ^ initial docstring
+                  -> (HaddockModInfo NsRdrName, MDoc NsRdrName)
+parseModuleHeader dflags pkgName (L sp str0) =
    let
       getKey :: String -> String -> (Maybe String,String)
       getKey key str = case parseKey key str of
@@ -42,7 +46,7 @@ parseModuleHeader dflags pkgName str0 =
       (portabilityOpt,str9) = getKey "Portability" str8
 
    in (HaddockModInfo {
-          hmi_description = parseString dflags <$> descriptionOpt,
+          hmi_description = parseString dflags . L sp <$> descriptionOpt,
           hmi_copyright = copyrightOpt,
           hmi_license = spdxLicenceOpt `mplus` licenseOpt `mplus` licenceOpt,
           hmi_maintainer = maintainerOpt,
@@ -51,7 +55,7 @@ parseModuleHeader dflags pkgName str0 =
           hmi_safety = Nothing,
           hmi_language = Nothing, -- set in LexParseRn
           hmi_extensions = [] -- also set in LexParseRn
-          }, parseParas dflags pkgName str9)
+          }, parseParas dflags pkgName (L sp str9))
 
 -- | This function is how we read keys.
 --

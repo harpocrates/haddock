@@ -7,8 +7,10 @@ module Haddock.Backends.Hyperlinker
 
 import Haddock.Types
 import Haddock.Backends.Hyperlinker.Renderer
+import Haddock.Backends.Hyperlinker.Parser
 import Haddock.Backends.Hyperlinker.Types
 import Haddock.Backends.Hyperlinker.Utils
+import Documentation.Haddock.Utf8 as Utf8
 
 import Text.XHtml hiding ((</>))
 
@@ -21,7 +23,6 @@ import HieUtils (recoverFullType)
 import HieBin
 import Data.Map as M
 import FastString
-import HieDebug
 import NameCache
 import UniqSupply
 
@@ -52,8 +53,8 @@ ppHyperlinkedSource outdir libdir mstyle pretty srcs ifaces = do
 ppHyperlinkedModuleSource :: FilePath -> Bool -> SrcMap -> Interface
                           -> IO ()
 ppHyperlinkedModuleSource srcdir pretty srcs iface =
-    case (ifaceTokenizedSrc iface, ifaceHieFile iface) of
-        (Just tokens, Just hfp) -> do
+    case ifaceHieFile iface of
+        (Just hfp) -> do
             u <- mkSplitUniqSupply 'a'
             (hiefile,_) <- readHieFile (initNameCache u []) hfp
             let mast = if M.size asts == 1
@@ -61,17 +62,19 @@ ppHyperlinkedModuleSource srcdir pretty srcs iface =
                        else M.lookup (mkFastString file) asts
                 file = hsFile hiefile
                 asts = getAsts $ hieAST hiefile
+                df = ifaceDynFlags iface
+                tokens = parse df file (Utf8.decodeUtf8 $ hsSrc hiefile)
             case mast of
               Just ast -> do
                   let types = hieTypes hiefile
                       flatAst = fmap (\i -> recoverFullType i types) ast
-                  writeFile path . html . render' flatAst $ tokens
+                  writeFile path . html . render' df flatAst $ tokens
               Nothing -> if M.size asts == 0
                 then return ()
                 else error $ "couldn't find ast for " ++ file ++ show (M.keys asts)
         _ -> return ()
   where
-    render' = render (Just srcCssFile) (Just highlightScript) srcs
+    render' df = render (Just srcCssFile) (Just highlightScript) df srcs
     html = if pretty then renderHtml else showHtml
     path = srcdir </> hypSrcModuleFile (ifaceMod iface)
 

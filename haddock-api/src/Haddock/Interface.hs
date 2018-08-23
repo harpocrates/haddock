@@ -51,7 +51,6 @@ import System.Directory
 import System.FilePath
 import Text.Printf
 
-import Module (mkModuleSet, emptyModuleSet, unionModuleSet, ModuleSet)
 import Digraph
 import DynFlags hiding (verbosity)
 import Exception
@@ -90,7 +89,7 @@ processModules verbosity modules flags extIfaces = do
   out verbosity verbose "Creating interfaces..."
   let instIfaceMap =  Map.fromList [ (instMod iface, iface) | ext <- extIfaces
                                    , iface <- ifInstalledIfaces ext ]
-  (interfaces, ms) <- createIfaces0 verbosity modules flags instIfaceMap
+  interfaces <- createIfaces0 verbosity modules flags instIfaceMap
 
   let exportedNames =
         Set.unions $ map (Set.fromList . ifaceExports) $
@@ -99,7 +98,7 @@ processModules verbosity modules flags extIfaces = do
   out verbosity verbose "Attaching instances..."
   interfaces' <- {-# SCC attachInstances #-}
                  withTiming getDynFlags "attachInstances" (const ()) $ do
-                   attachInstances (exportedNames, mods) interfaces instIfaceMap ms
+                   attachInstances (exportedNames, mods) interfaces instIfaceMap
 
   out verbosity verbose "Building cross-linking environment..."
   -- Combine the link envs of the external packages into one
@@ -123,7 +122,7 @@ processModules verbosity modules flags extIfaces = do
 --------------------------------------------------------------------------------
 
 
-createIfaces0 :: Verbosity -> [String] -> [Flag] -> InstIfaceMap -> Ghc ([Interface], ModuleSet)
+createIfaces0 :: Verbosity -> [String] -> [Flag] -> InstIfaceMap -> Ghc [Interface]
 createIfaces0 verbosity modules flags instIfaceMap =
   -- Output dir needs to be set before calling depanal since depanal uses it to
   -- compute output file names that are stored in the DynFlags of the
@@ -153,27 +152,25 @@ createIfaces0 verbosity modules flags instIfaceMap =
       depanal [] False
 
 
-createIfaces :: Verbosity -> [Flag] -> InstIfaceMap -> ModuleGraph -> Ghc ([Interface], ModuleSet)
+createIfaces :: Verbosity -> [Flag] -> InstIfaceMap -> ModuleGraph -> Ghc [Interface]
 createIfaces verbosity flags instIfaceMap mods = do
   let sortedMods = flattenSCCs $ topSortModuleGraph False mods Nothing
   out verbosity normal "Haddock coverage:"
-  (ifaces, _, !ms) <- foldM f ([], Map.empty, emptyModuleSet) sortedMods
-  return (reverse ifaces, ms)
+  (ifaces, _) <- foldM f ([], Map.empty) sortedMods
+  return (reverse ifaces)
   where
-    f (ifaces, ifaceMap, !ms) modSummary = do
+    f (ifaces, ifaceMap) modSummary = do
       x <- {-# SCC processModule #-}
            withTiming getDynFlags "processModule" (const ()) $ do
              processModule verbosity modSummary flags ifaceMap instIfaceMap
       return $ case x of
-        Just (iface, ms') -> ( iface:ifaces
-                             , Map.insert (ifaceMod iface) iface ifaceMap
-                             , unionModuleSet ms ms' )
-        Nothing           -> ( ifaces
-                             , ifaceMap
-                             , ms ) -- Boot modules don't generate ifaces.
+        Just iface -> ( iface:ifaces
+                      , Map.insert (ifaceMod iface) iface ifaceMap )
+        Nothing    -> ( ifaces
+                      , ifaceMap ) -- Boot modules don't generate ifaces.
 
 
-processModule :: Verbosity -> ModSummary -> [Flag] -> IfaceMap -> InstIfaceMap -> Ghc (Maybe (Interface, ModuleSet))
+processModule :: Verbosity -> ModSummary -> [Flag] -> IfaceMap -> InstIfaceMap -> Ghc (Maybe Interface)
 processModule verbosity modsum flags modMap instIfaceMap = do
   out verbosity verbose $ "Checking module " ++ moduleString (ms_mod modsum) ++ "..."
   tm <- {-# SCC "parse/typecheck/load" #-} loadModule =<< typecheckModule =<< parseModule modsum
@@ -183,20 +180,6 @@ processModule verbosity modsum flags modMap instIfaceMap = do
     (interface, msgs) <- {-# SCC createIterface #-}
                         withTiming getDynFlags "createInterface" (const ()) $ do
                           runWriterGhc $ createInterface tm flags modMap instIfaceMap
-
-    -- We need to keep track of which modules were somehow in scope so that when
-    -- Haddock later looks for instances, it also looks in these modules too.
-    --
-    -- See https://github.com/haskell/haddock/issues/469.
-    hsc_env <- getSession
-    let new_rdr_env = tcg_rdr_env . fst . GHC.tm_internals_ $ tm
-        this_pkg = thisPackage (hsc_dflags hsc_env)
-        !mods = mkModuleSet [ nameModule name
-                            | gre <- globalRdrEnvElts new_rdr_env
-                            , let name = gre_name gre
-                            , nameIsFromExternalPackage this_pkg name
-                            , isTcOcc (nameOccName name)   -- Types and classes only
-                            , unQualOK gre ]               -- In scope unqualified
 
     liftIO $ mapM_ putStrLn (nub msgs)
     dflags <- getDynFlags
@@ -231,7 +214,7 @@ processModule verbosity modsum flags modMap instIfaceMap = do
         unless header $ out verbosity normal "    Module header"
         mapM_ (out verbosity normal . ("    " ++)) undocumentedExports
     interface' <- liftIO $ evaluate interface
-    return (Just (interface', mods))
+    return (Just interface')
   else
     return Nothing
 

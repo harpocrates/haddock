@@ -1305,8 +1305,8 @@ tt ltx = text "\\haddocktt" <> braces ltx
 
 
 decltt :: LaTeX -> LaTeX
-decltt ltx = text "\\haddockdecltt" <> braces ltx
-
+decltt ltx = text "\\haddockdecltt" <> braces (text filtered)
+  where filtered = latexMonoFilter (show ltx)
 
 emph :: LaTeX -> LaTeX
 emph ltx = text "\\emph" <> braces ltx

@@ -332,6 +332,7 @@ ppFamDecl doc instances decl unicode =
 
     familyEqns
       | FamilyDecl { fdInfo = ClosedTypeFamily (Just eqns) } <- tcdFam decl
+      , not (null eqns)
       = Just (text "\\haddockbeginargs" $$
               vcat [ decltt (ppFamDeclEqn eqn) <+> nl | L _ eqn <- eqns ] $$
               text "\\end{tabulary}\\par")
@@ -474,7 +475,7 @@ ppSubSigLike unicode typ argDocs subdocs leader = do_args 0 leader typ
     do_args :: Int -> LaTeX -> HsType DocNameI -> [(LaTeX, LaTeX)]
     do_args _n leader (HsForAllTy _ tvs ltype)
       = [ ( decltt leader
-          , decltt (hsep (forallSymbol unicode : ppTyVars tvs ++ [dot]))
+          , decltt (hsep (forallSymbol unicode : ppTyVars unicode tvs ++ [dot]))
               <+> ppLType unicode ltype
           ) ]
     do_args n leader (HsQualTy _ lctxt ltype)
@@ -510,8 +511,8 @@ ppTypeSig nms ty unicode =
     <+> ppType unicode ty
 
 
-ppTyVars :: [LHsTyVarBndr DocNameI] -> [LaTeX]
-ppTyVars = map (ppSymName . getName . hsLTyVarName)
+ppTyVars :: Bool -> [LHsTyVarBndr DocNameI] -> [LaTeX]
+ppTyVars unicode = map (ppHsTyVarBndr unicode . unLoc)
 
 
 tyvarNames :: LHsQTyVars DocNameI -> [Name]
@@ -1004,7 +1005,7 @@ ppCtxType    unicode ty = ppr_mono_ty (reparenTypePrec PREC_CTX ty) unicode
 ppHsTyVarBndr :: Bool -> HsTyVarBndr DocNameI -> LaTeX
 ppHsTyVarBndr _ (UserTyVar _ (L _ name)) = ppDocName name
 ppHsTyVarBndr unicode (KindedTyVar _ (L _ name) kind) =
-  parens (ppDocName name) <+> dcolon unicode <+> ppLKind unicode kind
+  parens (ppDocName name <+> dcolon unicode <+> ppLKind unicode kind)
 ppHsTyVarBndr _ (XTyVarBndr _) = panic "haddock:ppHsTyVarBndr"
 
 ppLKind :: Bool -> LHsKind DocNameI -> LaTeX
@@ -1023,7 +1024,7 @@ ppr_mono_lty ty unicode = ppr_mono_ty (unLoc ty) unicode
 
 ppr_mono_ty :: HsType DocNameI -> Bool -> LaTeX
 ppr_mono_ty (HsForAllTy _ tvs ty) unicode
-  = sep [ hsep (forallSymbol unicode : ppTyVars tvs) <> dot
+  = sep [ hsep (forallSymbol unicode : ppTyVars unicode tvs) <> dot
         , ppr_mono_lty ty unicode ]
 ppr_mono_ty (HsQualTy _ ctxt ty) unicode
   = sep [ ppLContext ctxt unicode
@@ -1213,7 +1214,7 @@ parLatexMarkup ppId = Markup {
     fixString Mono  s = latexMonoFilter s
 
     markupLink (Hyperlink url mLabel) = case mLabel of
-      Just label -> text "\\href" <> braces (text url) <> braces (text label)
+      Just label -> text "\\href" <> braces (text url) <> braces (text (latexFilter label))
       Nothing    -> text "\\url"  <> braces (text url)
 
     -- Is there a better way of doing this? Just a space is an aribtrary choice.

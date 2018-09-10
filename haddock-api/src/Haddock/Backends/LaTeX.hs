@@ -484,8 +484,9 @@ ppSubSigLike unicode typ argDocs subdocs leader = do_args 0 leader typ
               <+> ppLType unicode ltype
           ) ]
     do_args n leader (HsQualTy _ lctxt ltype)
-      = (decltt leader, ppLContextNoArrow lctxt unicode <+> nl)
-        : do_largs n (darrow unicode) ltype
+      = ( decltt leader
+        , decltt (ppLContextNoArrow lctxt unicode) <+> nl
+        ) : do_largs n (darrow unicode) ltype
 
     do_args n leader (HsFunTy _ (L _ (HsRecTy _ fields)) r)
       = [ (decltt ldr, latex <+> nl)
@@ -542,9 +543,9 @@ multiDecl :: [LaTeX] -> LaTeX
 multiDecl decls =
    text "\\begin{haddockdesc}" $$
    vcat [
-      text "\\item[" $$
+      text "\\item[\\begin{tabular}{@{}l}" $$
       text (latexMonoFilter (show decl)) $$
-      text "]"
+      text "\\end{tabular}]"
       | decl <- decls ] $$
    text "\\end{haddockdesc}"
 
@@ -1114,27 +1115,14 @@ ppSymName name
   | otherwise = ppName name
 
 
-ppVerbOccName :: OccName -> LaTeX
-ppVerbOccName = text . latexFilter . occNameString
-
 ppIPName :: HsIPName -> LaTeX
 ppIPName = text . ('?':) . unpackFS . hsIPNameFS
 
 ppOccName :: OccName -> LaTeX
 ppOccName = text . occNameString
 
-
-ppVerbDocName :: DocName -> LaTeX
-ppVerbDocName = ppVerbOccName . nameOccName . getName
-
-
-ppVerbRdrName :: RdrName -> LaTeX
-ppVerbRdrName = ppVerbOccName . rdrNameOcc
-
-
 ppDocName :: DocName -> LaTeX
 ppDocName = ppOccName . nameOccName . getName
-
 
 ppLDocName :: Located DocName -> LaTeX
 ppLDocName (L _ d) = ppDocName d
@@ -1183,19 +1171,19 @@ latexMonoMunge c   s = latexMunge c s
 -------------------------------------------------------------------------------
 
 
-parLatexMarkup :: (a -> LaTeX) -> DocMarkup a (StringContext -> LaTeX -> LaTeX)
-parLatexMarkup ppId = Markup {
+latexMarkup :: HasOccName a => DocMarkup a (StringContext -> LaTeX -> LaTeX)
+latexMarkup = Markup {
   markupParagraph            = \p v -> blockElem (p v (text "\\par")),
   markupEmpty                = \_ -> id,
   markupString               = \s v -> inlineElem (text (fixString v s)),
   markupAppend               = \l r v -> l v . r v,
-  markupIdentifier           = \i v -> inlineElem (markupId ppId i v),
-  markupIdentifierUnchecked  = \i v -> inlineElem (markupId (ppVerbOccName . snd) i v),
+  markupIdentifier           = \i v -> inlineElem (markupId v (occName i)),
+  markupIdentifierUnchecked  = \i v -> inlineElem (markupId v (snd i)),
   markupModule               = \m _ -> inlineElem (let (mdl,_ref) = break (=='#') m in (tt (text mdl))),
   markupWarning              = \p v -> p v,
   markupEmphasis             = \p v -> inlineElem (emph (p v empty)),
   markupBold                 = \p v -> inlineElem (bold (p v empty)),
-  markupMonospaced           = \p _ -> inlineElem (tt (p Mono empty)),
+  markupMonospaced           = \p v -> inlineElem (markupMonospace p v),
   markupUnorderedList        = \p v -> blockElem (itemizedList (map (\p' -> p' v empty) p)),
   markupPic                  = \p _ -> inlineElem (markupPic p),
   markupMathInline           = \p _ -> inlineElem (markupMathInline p),
@@ -1229,6 +1217,9 @@ parLatexMarkup ppId = Markup {
     fixString Verb  s = s
     fixString Mono  s = latexMonoFilter s
 
+    markupMonospace p Verb = p Verb empty
+    markupMonospace p _ = tt (p Mono empty)
+
     markupLink (Hyperlink url mLabel) = case mLabel of
       Just label -> text "\\href" <> braces (text url) <> braces (text (latexFilter label))
       Nothing    -> text "\\url"  <> braces (text url)
@@ -1245,20 +1236,12 @@ parLatexMarkup ppId = Markup {
 
     markupMathDisplay mathjax = text "\\[" <> text mathjax <> text "\\]"
 
-    markupId ppId_ id v =
+    markupId v occ =
       case v of
-        Verb  -> theid
-        Mono  -> theid
-        Plain -> text "\\haddockid" <> braces theid
-      where theid = ppId_ id
-
-
-latexMarkup :: DocMarkup DocName (StringContext -> LaTeX -> LaTeX)
-latexMarkup = parLatexMarkup ppVerbDocName
-
-
-rdrLatexMarkup :: DocMarkup RdrName (StringContext -> LaTeX -> LaTeX)
-rdrLatexMarkup = parLatexMarkup ppVerbRdrName
+        Verb  -> text i
+        Mono  -> text "\\haddockid" <> braces (text . latexMonoFilter $ i)
+        Plain -> text "\\haddockid" <> braces (text . latexFilter $ i)
+      where i = occNameString occ
 
 
 docToLaTeX :: Doc DocName -> LaTeX
@@ -1270,10 +1253,13 @@ documentationToLaTeX = fmap docToLaTeX . fmap _doc . combineDocumentation
 
 
 rdrDocToLaTeX :: Doc RdrName -> LaTeX
-rdrDocToLaTeX doc = markup rdrLatexMarkup doc Plain empty
+rdrDocToLaTeX doc = markup latexMarkup doc Plain empty
 
 
-data StringContext = Plain | Verb | Mono
+data StringContext
+  = Plain  -- ^ all special characters have to be escape
+  | Mono   -- ^ on top of special characters, escape space chraacters
+  | Verb   -- ^ don't escape anything
 
 
 latexStripTrailingWhitespace :: Doc a -> Doc a
@@ -1298,23 +1284,23 @@ latexStripTrailingWhitespace other = other
 
 itemizedList :: [LaTeX] -> LaTeX
 itemizedList items =
-  text "\\begin{itemize}" $$
+  text "\\vbox{\\begin{itemize}" $$
   vcat (map (text "\\item" $$) items) $$
-  text "\\end{itemize}"
+  text "\\end{itemize}}"
 
 
 enumeratedList :: [LaTeX] -> LaTeX
 enumeratedList items =
-  text "\\begin{enumerate}" $$
+  text "\\vbox{\\begin{enumerate}" $$
   vcat (map (text "\\item " $$) items) $$
-  text "\\end{enumerate}"
+  text "\\end{enumerate}}"
 
 
 descriptionList :: [(LaTeX,LaTeX)] -> LaTeX
 descriptionList items =
-  text "\\begin{description}" $$
-  vcat (map (\(a,b) -> text "\\item" <> brackets a <+> b) items) $$
-  text "\\end{description}"
+  text "\\vbox{\\begin{description}" $$
+  vcat (map (\(a,b) -> text "\\item" <> brackets a <> text "\\hfill \\par" $$ b) items) $$
+  text "\\end{description}}"
 
 
 tt :: LaTeX -> LaTeX

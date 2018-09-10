@@ -284,7 +284,7 @@ ppDecl :: LHsDecl DocNameI                         -- ^ decl to print
        -> LaTeX
 
 ppDecl decl pats (doc, fnArgsDoc) instances subdocs _fxts = case unLoc decl of
-  TyClD _ d@FamDecl {}         -> ppFamDecl doc instances d unicode
+  TyClD _ d@FamDecl {}         -> ppFamDecl False doc instances d unicode
   TyClD _ d@DataDecl {}        -> ppDataDecl pats instances subdocs (Just doc) d unicode
   TyClD _ d@SynDecl {}         -> ppTySyn (doc, fnArgsDoc) d unicode
 -- Family instances happen via FamInst now
@@ -314,13 +314,14 @@ ppFor _ _ _ = error "ppFor error in Haddock.Backends.LaTeX"
 -------------------------------------------------------------------------------
 
 -- | Pretty-print a data\/type family declaration
-ppFamDecl :: Documentation DocName    -- ^ this decl's docs
+ppFamDecl :: Bool                     -- ^ is the family associated?
+          -> Documentation DocName    -- ^ this decl's docs
           -> [DocInstance DocNameI]   -- ^ relevant instances
           -> TyClDecl DocNameI        -- ^ family to print
           -> Bool                     -- ^ unicode
           -> LaTeX
-ppFamDecl doc instances decl unicode =
-  declWithDoc (ppFamHeader (tcdFam decl) unicode <+> whereBit)
+ppFamDecl associated doc instances decl unicode =
+  declWithDoc (ppFamHeader (tcdFam decl) unicode associated <+> whereBit)
               (if null body then Nothing else Just (vcat body))
   $$ instancesBit
   where
@@ -354,21 +355,25 @@ ppFamDecl doc instances decl unicode =
 
 -- | Print the LHS of a type\/data family declaration.
 ppFamHeader :: FamilyDecl DocNameI  -- ^ family header to print
-              -> Bool                 -- ^ unicode
-              -> LaTeX
-ppFamHeader (XFamilyDecl _) _ = panic "haddock;ppFamHeader"
+            -> Bool                 -- ^ unicode
+            -> Bool                 -- ^ is the family associated?
+            -> LaTeX
+ppFamHeader (XFamilyDecl _) _ _ = panic "haddock;ppFamHeader"
 ppFamHeader (FamilyDecl { fdLName = L _ name
                         , fdTyVars = tvs
                         , fdInfo = info
                         , fdResultSig = L _ result
                         , fdInjectivityAnn = injectivity })
-              unicode =
-  leader <+> keyword "family" <+> famName <+> famSig <+> injAnn
+              unicode associated =
+  famly leader <+> famName <+> famSig <+> injAnn
   where
     leader = case info of
       OpenTypeFamily     -> keyword "type"
       ClosedTypeFamily _ -> keyword "type"
       DataFamily         -> keyword "data"
+
+    famly | associated = id
+          | otherwise = (<+> keyword "family")
 
     famName = ppAppDocNameTyVarBndrs unicode name (hsq_explicit tvs)
 
@@ -604,8 +609,16 @@ ppClassDecl instances doc subdocs
     body_
       | null lsigs, null ats, null at_defs = Nothing
       | null ats, null at_defs = Just methodTable
----     | otherwise = atTable $$ methodTable
-      | otherwise = error "LaTeX.ppClassDecl"
+      | otherwise = Just (atTable $$ methodTable)
+
+    atTable =
+      text "\\haddockpremethods{}" <> emph (text "Associated Types") $$
+      vcat  [ ppFamDecl True (fst doc) [] (FamDecl noExt decl) True
+            | L _ decl <- ats
+            , let name = unL . fdLName $ decl
+                  doc = lookupAnySubdoc name subdocs
+            ]
+
 
     methodTable =
       text "\\haddockpremethods{}" <> emph (text "Methods") $$
@@ -1170,36 +1183,39 @@ latexMonoMunge c   s = latexMunge c s
 -------------------------------------------------------------------------------
 
 
-parLatexMarkup :: (a -> LaTeX) -> DocMarkup a (StringContext -> LaTeX)
+parLatexMarkup :: (a -> LaTeX) -> DocMarkup a (StringContext -> LaTeX -> LaTeX)
 parLatexMarkup ppId = Markup {
-  markupParagraph            = \p v -> blockElem $ p v <> text "\\par",
-  markupEmpty                = \_ -> empty,
-  markupString               = \s v -> text (fixString v s),
-  markupAppend               = \l r v -> l v <> r v,
-  markupIdentifier           = markupId ppId,
-  markupIdentifierUnchecked  = markupId (ppVerbOccName . snd),
-  markupModule               = \m _ -> let (mdl,_ref) = break (=='#') m in tt (text mdl),
+  markupParagraph            = \p v -> blockElem (p v (text "\\par")),
+  markupEmpty                = \_ -> id,
+  markupString               = \s v -> inlineElem (text (fixString v s)),
+  markupAppend               = \l r v -> l v . r v,
+  markupIdentifier           = \i v -> inlineElem (markupId ppId i v),
+  markupIdentifierUnchecked  = \i v -> inlineElem (markupId (ppVerbOccName . snd) i v),
+  markupModule               = \m _ -> inlineElem (let (mdl,_ref) = break (=='#') m in (tt (text mdl))),
   markupWarning              = \p v -> p v,
-  markupEmphasis             = \p v -> emph (p v),
-  markupBold                 = \p v -> bold (p v),
-  markupMonospaced           = \p _ -> tt (p Mono),
-  markupUnorderedList        = \p v -> blockElem $ itemizedList (map ($v) p),
-  markupPic                  = \p _ -> markupPic p,
-  markupMathInline           = \p _ -> markupMathInline p,
-  markupMathDisplay          = \p _ -> blockElem $ markupMathDisplay p,
-  markupOrderedList          = \p v -> blockElem $ enumeratedList (map ($v) p),
-  markupDefList              = \l v -> blockElem $ descriptionList (map (\(a,b) -> (a v, b v)) l),
-  markupCodeBlock            = \p _ -> blockElem $ quote (verb (p Verb)),
-  markupHyperlink            = \l _ -> markupLink l,
-  markupAName                = \_ _ -> empty,
-  markupProperty             = \p _ -> blockElem $ quote $ verb $ text p,
-  markupExample              = \e _ -> blockElem $ quote $ verb $ text $ unlines $ map exampleToString e,
-  markupHeader               = \(Header l h) p -> header l (h p),
-  markupTable                = \(Table h b) p -> table h b p
+  markupEmphasis             = \p v -> inlineElem (emph (p v empty)),
+  markupBold                 = \p v -> inlineElem (bold (p v empty)),
+  markupMonospaced           = \p _ -> inlineElem (tt (p Mono empty)),
+  markupUnorderedList        = \p v -> blockElem (itemizedList (map (\p' -> p' v empty) p)),
+  markupPic                  = \p _ -> inlineElem (markupPic p),
+  markupMathInline           = \p _ -> inlineElem (markupMathInline p),
+  markupMathDisplay          = \p _ -> blockElem (markupMathDisplay p),
+  markupOrderedList          = \p v -> blockElem (enumeratedList (map (\p' -> p' v empty) p)),
+  markupDefList              = \l v -> blockElem (descriptionList (map (\(a,b) -> (a v empty, b v empty)) l)),
+  markupCodeBlock            = \p _ -> blockElem (quote (verb (p Verb empty))),
+  markupHyperlink            = \l _ -> inlineElem (markupLink l),
+  markupAName                = \_ _ -> id, -- TODO
+  markupProperty             = \p _ -> blockElem (quote (verb (text p))),
+  markupExample              = \e _ -> blockElem (quote (verb (text $ unlines $ map exampleToString e))),
+  markupHeader               = \(Header l h) p -> blockElem (header l (h p empty)),
+  markupTable                = \(Table h b) p -> blockElem (table h b p)
   }
   where
-    blockElem :: LaTeX -> LaTeX
-    blockElem = ($$ text "")
+    blockElem :: LaTeX -> LaTeX -> LaTeX
+    blockElem = ($$)
+
+    inlineElem :: LaTeX -> LaTeX -> LaTeX
+    inlineElem = (<>)
 
     header 1 d = text "\\section*" <> braces d
     header 2 d = text "\\subsection*" <> braces d
@@ -1237,16 +1253,16 @@ parLatexMarkup ppId = Markup {
       where theid = ppId_ id
 
 
-latexMarkup :: DocMarkup DocName (StringContext -> LaTeX)
+latexMarkup :: DocMarkup DocName (StringContext -> LaTeX -> LaTeX)
 latexMarkup = parLatexMarkup ppVerbDocName
 
 
-rdrLatexMarkup :: DocMarkup RdrName (StringContext -> LaTeX)
+rdrLatexMarkup :: DocMarkup RdrName (StringContext -> LaTeX -> LaTeX)
 rdrLatexMarkup = parLatexMarkup ppVerbRdrName
 
 
 docToLaTeX :: Doc DocName -> LaTeX
-docToLaTeX doc = markup latexMarkup doc Plain
+docToLaTeX doc = markup latexMarkup doc Plain empty
 
 
 documentationToLaTeX :: Documentation DocName -> Maybe LaTeX
@@ -1254,7 +1270,7 @@ documentationToLaTeX = fmap docToLaTeX . fmap _doc . combineDocumentation
 
 
 rdrDocToLaTeX :: Doc RdrName -> LaTeX
-rdrDocToLaTeX doc = markup rdrLatexMarkup doc Plain
+rdrDocToLaTeX doc = markup rdrLatexMarkup doc Plain empty
 
 
 data StringContext = Plain | Verb | Mono

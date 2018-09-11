@@ -100,6 +100,10 @@ haddockSty = "haddock.sty"
 
 type LaTeX = Pretty.Doc
 
+-- | Default way of rendering a 'LaTeX'. The width is 90 by default (since 100
+-- often overflows the line).
+latex2String :: LaTeX -> String
+latex2String = fullRender PageMode 90 1 txtPrinter ""
 
 ppLaTeXTop
    :: String
@@ -153,7 +157,7 @@ ppLaTeXModule _title odir iface = do
         text "\\haddockbeginheader",
         verb $ vcat [
            text "module" <+> text mdl_str <+> lparen,
-           text "    " <> fsep (punctuate (text ", ") $
+           text "    " <> fsep (punctuate (char ',') $
                                map exportListItem $
                                filter forSummary exports),
            text "  ) where"
@@ -168,7 +172,7 @@ ppLaTeXModule _title odir iface = do
 
       body = processExports exports
   --
-  writeFile (odir </> moduleLaTeXFile mdl) (fullRender PageMode 80 1 txtPrinter "" tex)
+  writeFile (odir </> moduleLaTeXFile mdl) (show tex)
 
 -- | Prints out an entry in a module export list.
 exportListItem :: ExportItem DocNameI -> LaTeX
@@ -529,7 +533,7 @@ declWithDoc :: LaTeX -> Maybe LaTeX -> LaTeX
 declWithDoc decl doc =
    text "\\begin{haddockdesc}" $$
    text "\\item[\\begin{tabular}{@{}l}" $$
-   text (latexMonoFilter (show decl)) $$
+   text (latexMonoFilter (latex2String decl)) $$
    text "\\end{tabular}]" <>
        (if isNothing doc then empty else text "\\haddockbegindoc") $$
    maybe empty id doc $$
@@ -544,7 +548,7 @@ multiDecl decls =
    text "\\begin{haddockdesc}" $$
    vcat [
       text "\\item[\\begin{tabular}{@{}l}" $$
-      text (latexMonoFilter (show decl)) $$
+      text (latexMonoFilter (latex2String decl)) $$
       text "\\end{tabular}]"
       | decl <- decls ] $$
    text "\\end{haddockdesc}"
@@ -656,6 +660,7 @@ ppDocInstances unicode (i : rest)
 
 isUndocdInstance :: DocInstance a -> Maybe (InstHead a)
 isUndocdInstance (i,Nothing,_,_) = Just i
+isUndocdInstance (i,Just (MetaDoc _ DocEmpty),_,_) = Just i
 isUndocdInstance _ = Nothing
 
 -- | Print a possibly commented instance. The instance header is printed inside
@@ -1309,7 +1314,7 @@ tt ltx = text "\\haddocktt" <> braces ltx
 
 decltt :: LaTeX -> LaTeX
 decltt ltx = text "\\haddockdecltt" <> braces (text filtered)
-  where filtered = latexMonoFilter (show ltx)
+  where filtered = latexMonoFilter (latex2String ltx)
 
 emph :: LaTeX -> LaTeX
 emph ltx = text "\\emph" <> braces ltx

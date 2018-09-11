@@ -3,14 +3,14 @@
 \haddockbeginheader
 {\haddockverb\begin{verbatim}
 module ConstructorArgs (
-    Foo((:|), Rec, Baz, Boa, (:*), x, y),  Boo(Foo, Foa, Fo, Fo'),  pattern Bo, 
-    pattern Bo'
+    Foo((:|), Rec, Baz, Boa, (:*), x, y), Boo(Foo, Foa, Fo, Fo'),
+    pattern Bo, pattern Bo'
   ) where\end{verbatim}}
 \haddockendheader
 
 \begin{haddockdesc}
 \item[\begin{tabular}{@{}l}
-data\ Foo
+data Foo
 \end{tabular}]\haddockbegindoc
 \enspace \emph{Constructors}\par
 \haddockbeginconstrs
@@ -29,7 +29,7 @@ data\ Foo
 \end{haddockdesc}
 \begin{haddockdesc}
 \item[\begin{tabular}{@{}l}
-data\ Boo\ where
+data Boo where
 \end{tabular}]\haddockbegindoc
 \enspace \emph{Constructors}\par
 \haddockbeginconstrs
@@ -50,7 +50,7 @@ data\ Boo\ where
 \end{haddockdesc}
 \begin{haddockdesc}
 \item[\begin{tabular}{@{}l}
-pattern\ Bo
+pattern Bo
 \end{tabular}]\haddockbegindoc
 \haddockbeginargs
 \haddockdecltt{::} & \haddockdecltt{Int} & an \haddockid{Int} \\
@@ -58,12 +58,10 @@ pattern\ Bo
 \haddockdecltt{->} & \haddockdecltt{Boo} & a \haddockid{Boo} pattern \\
 \end{tabulary}\par
 Info about not-bundled \haddockid{Bo}\par
-
 \end{haddockdesc}
 \begin{haddockdesc}
 \item[\begin{tabular}{@{}l}
-pattern\ Bo'\ ::\ Int\ ->\ String\ ->\ Boo
+pattern Bo' :: Int -> String -> Boo
 \end{tabular}]\haddockbegindoc
 Not bunded and no argument docs\par
-
 \end{haddockdesc}

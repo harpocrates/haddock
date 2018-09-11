@@ -509,9 +509,9 @@ ppSubSigLike unicode typ argDocs subdocs leader = do_args 0 leader typ
     -- We need 'gadtComma' and 'gadtEnd' to line up with the `{` from
     -- 'gadtOpen', so we add 3 spaces to cover for `-> `/`:: ` (3 in unicode
     -- mode since `->` and `::` are rendered as single characters.
-    gadtComma = hcat (replicate (if unicode then 3 else 4) (text "\\ ")) <> text ","
-    gadtEnd = hcat (replicate (if unicode then 3 else 4) (text "\\ ")) <> text "\\}"
-    gadtOpen = text "\\{"
+    gadtComma = hcat (replicate (if unicode then 3 else 4) (char ' ')) <> char ','
+    gadtEnd = hcat (replicate (if unicode then 3 else 4) (char ' ')) <> char '}'
+    gadtOpen = char '{'
 
 
 ppTypeSig :: [Name] -> HsType DocNameI  -> Bool -> LaTeX
@@ -1083,7 +1083,7 @@ ppr_mono_ty (HsParTy _ ty) unicode
 ppr_mono_ty (HsDocTy _ ty _) unicode
   = ppr_mono_lty ty unicode
 
-ppr_mono_ty (HsWildCardTy (AnonWildCard _)) _ = text "\\_"
+ppr_mono_ty (HsWildCardTy (AnonWildCard _)) _ = char '_'
 
 ppr_mono_ty (HsTyLit _ t) u = ppr_tylit t u
 ppr_mono_ty (HsStarTy _ isUni) unicode = starSymbol (isUni || unicode)
@@ -1166,9 +1166,10 @@ latexMunge c    s = c : s
 
 
 latexMonoMunge :: Char -> String -> String
-latexMonoMunge ' ' s = '\\' : ' ' : s
+latexMonoMunge ' '      (' ':s) = "\\ \\ " ++ s
+latexMonoMunge ' ' ('\\':' ':s) = "\\ \\ " ++ s
 latexMonoMunge '\n' s = '\\' : '\\' : s
-latexMonoMunge c   s = latexMunge c s
+latexMonoMunge c s = latexMunge c s
 
 
 -------------------------------------------------------------------------------

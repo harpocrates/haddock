@@ -69,7 +69,7 @@ createInterface :: ModIface
                 -> IfaceMap     -- Locally processed modules
                 -> InstIfaceMap -- External, already installed interfaces
                 -> ErrMsgGhc Interface
-createInterface mod_loc mod_iface flags modMap instIfaceMap = do
+createInterface mod_iface mod_loc flags modMap instIfaceMap = do
   dflags <- getDynFlags
 
   let mdl            = mi_module mod_iface
@@ -672,14 +672,4 @@ seqList :: [a] -> ()
 seqList [] = ()
 seqList (x : xs) = x `seq` seqList xs
 
--- | Find a stand-alone documentation comment by its name.
-findNamedDoc :: String -> [HsDecl GhcRn] -> ErrMsgM (Maybe HsDocString)
-findNamedDoc name = search
-  where
-    search [] = do
-      tell ["Cannot find documentation for: $" ++ name]
-      return Nothing
-    search (DocD _ (DocCommentNamed name' doc) : rest)
-      | name == name' = return (Just doc)
-      | otherwise = search rest
-    search (_other_decl : rest) = search rest
+

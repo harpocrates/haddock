@@ -196,7 +196,7 @@ processModule verbosity modsum flags modMap instIfaceMap = do
     let mod_loc = ms_location modsum
     (interface, msgs) <- {-# SCC createIterface #-}
                         withTiming getDynFlags "createInterface" (const ()) $
-                          runWriterGhc $ createInterface mod_loc mod_iface flags modMap instIfaceMap
+                          runWriterGhc $ createInterface mod_iface mod_loc flags modMap instIfaceMap
     liftIO $ mapM_ putStrLn (nub msgs)
     dflags <- getDynFlags
     let (haddockable, haddocked) = ifaceHaddockCoverage interface

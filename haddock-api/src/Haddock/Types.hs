@@ -47,7 +47,7 @@ import Control.Monad (ap)
 import Control.Monad.IO.Class
 
 import Haddock.Backends.Hyperlinker.Types
-import HieTypes
+import HieTypes hiding (Identifier)
 
 -----------------------------------------------------------------------------
 -- * Convenient synonyms

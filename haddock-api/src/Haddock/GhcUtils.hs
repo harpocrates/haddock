@@ -31,7 +31,7 @@ import HscTypes
 import GHC
 import Class
 import DynFlags
-import Var       ( TyVarBndr(..), TyVarBinder, tyVarKind )
+import Var       ( VarBndr(..), TyVarBinder, tyVarKind )
 import VarSet    ( VarSet, emptyVarSet )
 import TyCoRep   ( Type(..) )
 
@@ -497,5 +497,5 @@ tyCoFVsOfTypes' []       fv_cand in_scope acc = emptyFV fv_cand in_scope acc
 -- | Just like 'tyCoFVsBndr', but traverses type variables in reverse order of
 -- appearance.
 tyCoFVsBndr' :: TyVarBinder -> FV -> FV
-tyCoFVsBndr' (TvBndr tv _) fvs = FV.delFV tv fvs `unionFV` tyCoFVsOfType' (tyVarKind tv)
+tyCoFVsBndr' (Bndr tv _) fvs = FV.delFV tv fvs `unionFV` tyCoFVsOfType' (tyVarKind tv)
 

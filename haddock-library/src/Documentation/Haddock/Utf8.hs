@@ -1,16 +1,20 @@
-module Documentation.Haddock.Utf8 (encodeUtf8, decodeUtf8) where
+module Documentation.Haddock.Utf8
+  (encodeUtf8, decodeUtf8) where
 import           Data.Bits ((.|.), (.&.), shiftL, shiftR)
 import qualified Data.ByteString as BS
 import           Data.Char (chr, ord)
 import           Data.Word (Word8)
 
+
 -- | Helper that encodes and packs a 'String' into a 'BS.ByteString'
 encodeUtf8 :: String -> BS.ByteString
 encodeUtf8 = BS.pack . encode
+{-# DEPRECATED encodeUtf8 "Use @fromString@ from the @utf8-string@ package instead" #-}
 
 -- | Helper that unpacks and decodes a 'BS.ByteString' into a 'String'
 decodeUtf8 :: BS.ByteString -> String
 decodeUtf8 = decode . BS.unpack
+{-# DEPRECATED decodeUtf8 "Use @toString@ from the @utf8-string@ package instead" #-}
 
 -- Copy/pasted functions from Codec.Binary.UTF8.String for encoding/decoding
 -- | Character to use when 'encode' or 'decode' fail for a byte.
